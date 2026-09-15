@@ -1,6 +1,6 @@
-# AI Testcase Studio
+# AI Testcase Platform
 
-AI Testcase Studio（AI 测试用例管理平台）是一套面向测试团队的 AI 用例生产与管理工具。平台将需求解析、功能点确认、测试用例生成、人工评审、用例入库、测试执行、知识沉淀和 AI 效果评测串成一条可追溯的工作流。
+AI Testcase Platform（AI 测试用例管理平台）是一套面向测试团队的 AI 用例生产与管理工具。平台将需求解析、功能点确认、测试用例生成、人工评审、用例入库、测试执行、知识沉淀和 AI 效果评测串成一条可追溯的工作流。
 
 项目适合用于：
 
@@ -172,7 +172,7 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e .
-python -m uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 后端启动后：

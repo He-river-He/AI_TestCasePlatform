@@ -1,0 +1,41 @@
+from typing import Literal,Any,Callable,Awaitable
+from dataclasses import dataclass,field
+from pathlib import Path
+from app.services.settings_service import RuntimeModelConfig
+
+
+SkillCategory = Literal["core","specialist","utility","quality"]
+SkillStage = Literal["requirement","generation","quality","review"]
+
+@dataclass
+class SkillUIConfig:
+    selectable:bool = False
+    group:str | None = None
+    icon:str | None = None
+
+@dataclass 
+class SkillMeta:
+    name:str
+    version:str
+    title:str
+    description:str
+    category:SkillCategory
+    stage:SkillStage
+    tags:list[str] = field(default_factory=list)
+    ui:SkillUIConfig=field(default_factory=SkillUIConfig)
+    inputs:dict[str,Any]=field(default_factory=dict)
+    outputs:dict[str,Any]=field(default_factory=dict)
+    directory:Path | None = None
+    strategies:dict[str,Any] = field(default_factory=dict)
+
+
+@dataclass
+class SkillContext:
+    model_config : RuntimeModelConfig
+    project_id:int | None = None
+    task_id : int | None = None
+    strategy:str = "full"
+    use_mock : bool = False
+
+"""SkillRunFn:一个异步函数,接收两个参数(dict[str, Any],SkillContext),返回一个可以 await 的对象,最终得到 dict[str, Any]"""
+SkillRunFn = Callable[[dict[str,Any],SkillContext],Awaitable[dict[str,Any]]]

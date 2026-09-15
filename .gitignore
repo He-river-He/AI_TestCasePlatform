@@ -1,0 +1,47 @@
+.env
+backend/venv/
+backend/data/
+web/node_modules/
+__pycache__/
+*.pyc
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+*.db
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Uploads
+uploads/
+
+# Playwright CLI artifacts
+.playwright-cli/
+
+# 测试运行输出
+output/

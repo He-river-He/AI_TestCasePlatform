@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  App, AutoComplete, Button, Drawer, Dropdown, Form, Input, Modal, Space, Spin, Table, Tag, Tooltip, Typography,
+  App, AutoComplete, Button, Drawer, Dropdown, Empty, Form, Input, Modal, Space, Spin, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import {
@@ -56,6 +56,7 @@ export default function GenerationHistory({ projectId }) {
   const [summaries, setSummaries] = useState([]);
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeSummary, setActiveSummary] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -64,16 +65,25 @@ export default function GenerationHistory({ projectId }) {
   const [runCreating, setRunCreating] = useState(false);
   const [runForm] = Form.useForm();
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     setLoading(true);
-    getGenerationSummaries(projectId)
-      .then(setSummaries)
-      .catch(() => message.error('加载生成记录失败'))
-      .finally(() => setLoading(false));
-  }, [projectId]);
+    setLoadError(false);
+    try {
+      setSummaries(await getGenerationSummaries(projectId));
+    } catch {
+      setSummaries([]);
+      setLoadError(true);
+      message.error('加载生成记录失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [message, projectId]);
+
+  useEffect(() => { load(); }, [load]);
 
   const openDetail = async (record) => {
     setActiveSummary(record);
+    setDetail(null);
     setDetailLoading(true);
     try {
       setDetail(await getGeneration(projectId, record.id));
@@ -119,9 +129,9 @@ export default function GenerationHistory({ projectId }) {
   };
 
   const handleCreateRun = async () => {
-    const values = await runForm.validateFields();
-    setRunCreating(true);
     try {
+      const values = await runForm.validateFields();
+      setRunCreating(true);
       const task = await createTestTask(projectId, {
         name: values.name,
         description: `从生成记录 #${runTarget.id} 导入`,
@@ -133,7 +143,9 @@ export default function GenerationHistory({ projectId }) {
       runForm.resetFields();
       navigate(`/projects/${projectId}/tasks/${task.id}`);
     } catch (err) {
-      message.error(err?.response?.data?.detail || '创建失败');
+      if (!err?.errorFields) {
+        message.error(err?.response?.data?.detail || '创建失败');
+      }
     } finally {
       setRunCreating(false);
     }
@@ -208,14 +220,20 @@ export default function GenerationHistory({ projectId }) {
           />
         </div>
       )}
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={filteredSummaries}
-        columns={columns}
-        pagination={filteredSummaries.length > 10 ? { pageSize: 10 } : false}
-        locale={{ emptyText: keyword ? '没有匹配的生成记录' : '暂无生成记录，去「AI 用例生成」发起第一次生成' }}
-      />
+      {loadError ? (
+        <Empty description="生成记录加载失败，请重试">
+          <Button onClick={load}>重新加载</Button>
+        </Empty>
+      ) : (
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={filteredSummaries}
+          columns={columns}
+          pagination={filteredSummaries.length > 10 ? { pageSize: 10 } : false}
+          locale={{ emptyText: keyword ? '没有匹配的生成记录' : '暂无生成记录，去「AI 用例生成」发起第一次生成' }}
+        />
+      )}
 
       <Drawer
         title={activeSummary ? `生成记录 #${activeSummary.id} · ${activeSummary.document_title || '未知文档'}` : ''}

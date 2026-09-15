@@ -2,10 +2,11 @@ import { DeleteOutlined, EllipsisOutlined, PlusOutlined } from '@ant-design/icon
 import {
   App, AutoComplete, Button, Card, Dropdown, Empty, Form, Input, Modal, Space, Spin, Tabs, Tag, Tree,
 } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { createTestTask, deleteTestTask, getTestcases, getTestTasks } from '../services/api';
+import { makeFeatureCatalogKey, makeModuleCatalogKey } from '../utils/catalogKeys';
 import { BATCH_PRESETS, RESULT_COLOR, RUN_STATUS_LABEL } from '../utils/runResult';
 
 const DEFAULT_MODULE = '未分类';
@@ -21,10 +22,10 @@ function buildCaseTree(cases) {
     modules[mod][feat].push(c);
   });
   return Object.entries(modules).map(([mod, feats]) => ({
-    key: `m:${mod}`,
+    key: makeModuleCatalogKey(mod),
     title: `${mod} (${Object.values(feats).reduce((n, list) => n + list.length, 0)})`,
     children: Object.entries(feats).map(([feat, list]) => ({
-      key: `m:${mod}|f:${feat}`,
+      key: makeFeatureCatalogKey(mod, feat),
       title: `${feat} (${list.length})`,
       children: list.map((c) => ({
         key: `c:${c.id}`,
@@ -114,18 +115,24 @@ export default function ProjectTestTasks() {
   const [keyword, setKeyword] = useState('');
   const [statusTab, setStatusTab] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [cases, setCases] = useState([]);
   const [casesLoading, setCasesLoading] = useState(false);
+  const [casesLoadError, setCasesLoadError] = useState(false);
   const [checkedKeys, setCheckedKeys] = useState([]);
   const [form] = Form.useForm();
+  const presetHandledRef = useRef(false);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       setTasks(await getTestTasks(pid));
     } catch {
+      setTasks([]);
+      setLoadError(true);
       message.error('加载测试任务失败');
     } finally {
       setLoading(false);
@@ -137,6 +144,8 @@ export default function ProjectTestTasks() {
   const openCreate = async (presetCaseIds = []) => {
     setOpen(true);
     setCasesLoading(true);
+    setCasesLoadError(false);
+    setCases([]);
     try {
       const list = await getTestcases(pid);
       setCases(list);
@@ -145,6 +154,7 @@ export default function ProjectTestTasks() {
         setCheckedKeys(presetCaseIds.filter((id) => valid.has(id)).map((id) => `c:${id}`));
       }
     } catch {
+      setCasesLoadError(true);
       message.error('加载用例失败');
     } finally {
       setCasesLoading(false);
@@ -154,11 +164,11 @@ export default function ProjectTestTasks() {
   // 从用例库「创建测试任务」入口带过来的预选用例
   useEffect(() => {
     const presetIds = location.state?.caseIds;
-    if (presetIds?.length) {
-      openCreate(presetIds);
-      navigate(location.pathname, { replace: true, state: null });
-    }
-  }, []);
+    if (!presetIds?.length || presetHandledRef.current) return;
+    presetHandledRef.current = true;
+    openCreate(presetIds);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   const treeData = useMemo(() => buildCaseTree(cases), [cases]);
   const selectedCount = useMemo(() => extractCaseIds(checkedKeys).length, [checkedKeys]);
@@ -184,14 +194,14 @@ export default function ProjectTestTasks() {
   };
 
   const handleCreate = async () => {
-    const values = await form.validateFields();
-    const caseIds = extractCaseIds(checkedKeys);
-    if (!caseIds.length) {
-      message.warning('请至少选择一条用例');
-      return;
-    }
     setCreating(true);
     try {
+      const values = await form.validateFields();
+      const caseIds = extractCaseIds(checkedKeys);
+      if (!caseIds.length) {
+        message.warning('请至少选择一条用例');
+        return;
+      }
       const task = await createTestTask(pid, {
         name: values.name,
         description: values.description || '',
@@ -204,7 +214,9 @@ export default function ProjectTestTasks() {
       setCheckedKeys([]);
       navigate(`/projects/${pid}/tasks/${task.id}`);
     } catch (err) {
-      message.error(err?.response?.data?.detail || '创建失败');
+      if (!err?.errorFields) {
+        message.error(err?.response?.data?.detail || '创建失败');
+      }
     } finally {
       setCreating(false);
     }
@@ -218,9 +230,13 @@ export default function ProjectTestTasks() {
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
-        await deleteTestTask(pid, task.id);
-        message.success('已删除');
-        load();
+        try {
+          await deleteTestTask(pid, task.id);
+          message.success('已删除');
+          await load();
+        } catch (err) {
+          message.error(err?.response?.data?.detail || '删除失败');
+        }
       },
     });
   };
@@ -260,6 +276,12 @@ export default function ProjectTestTasks() {
 
       {loading ? (
         <Card className="surface-card"><div style={{ textAlign: 'center', padding: 60 }}><Spin /></div></Card>
+      ) : loadError ? (
+        <Card className="surface-card">
+          <Empty description="测试任务加载失败，请重试">
+            <Button onClick={load}>重新加载</Button>
+          </Empty>
+        </Card>
       ) : tasks.length === 0 ? (
         <Card className="surface-card">
           <Empty
@@ -324,6 +346,10 @@ export default function ProjectTestTasks() {
         </div>
         {casesLoading ? (
           <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
+        ) : casesLoadError ? (
+          <Empty description="项目用例加载失败，请重试">
+            <Button onClick={() => openCreate(extractCaseIds(checkedKeys))}>重新加载</Button>
+          </Empty>
         ) : cases.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="项目还没有已入库用例" />
         ) : (

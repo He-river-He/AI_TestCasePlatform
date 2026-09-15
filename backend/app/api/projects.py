@@ -29,6 +29,10 @@ def create_project(data:ProjectCreate,db:Session=Depends(get_db)):
     db.refresh(project)
     return project
 
+@router.get("/overview", response_model=HomeOverviewOut)
+def get_overview(db:Session = Depends(get_db)):
+    return get_home_overview(db,current_user_id(db))
+
 @router.get("/{project_id}",response_model=ProjectOut)
 def get_project(project_id:int,db:Session=Depends(get_db)):
     project = db.query(Project).filter(
@@ -75,7 +79,7 @@ def delete_project(project_id:int,db:Session=Depends(get_db)):
     remove_project_designs(project_id)
 
 # ---------------------------------项目总览/阶段状态--------------------------
-@router.get("{project_id}/stage",response_model=ProjectStageOut)
+@router.get("/{project_id}/stage",response_model=ProjectStageOut)
 def get_project_stage(project_id:int,db:Session=Depends(get_db)):
     project = db.query(Project).filter(
         Project.id == project_id,
@@ -85,7 +89,3 @@ def get_project_stage(project_id:int,db:Session=Depends(get_db)):
     if not project:
         raise HTTPException(404,"项目不存在")
     return compute_project_stage(db,project_id)
-
-@router.get("/overview", response_model=HomeOverviewOut)
-def get_overview(db:Session = Depends(get_db)):
-    return get_home_overview(db,current_user_id(db))

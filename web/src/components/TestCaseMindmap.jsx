@@ -3,6 +3,7 @@ import { Button, Drawer, Dropdown, Empty, Segmented, Space, Tag, Tooltip } from 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { stepsToText } from '../utils/caseText';
+import { makeFeatureCatalogKey, makeModuleCatalogKey } from '../utils/catalogKeys';
 import { REVIEW_COLOR, REVIEW_LABEL } from '../pages/generate/constants';
 import { RESULT_COLOR, RESULT_LABEL, RESULT_TAG_COLOR } from '../utils/runResult';
 
@@ -75,7 +76,7 @@ function buildModuleNodes(modules, keyPrefix = '') {
       if (!types.has('boundary')) missing.push('边界');
       if (!types.has('exception')) missing.push('异常');
       return {
-        key: `${keyPrefix}m:${mod}|f:${feat}`,
+        key: makeFeatureCatalogKey(mod, feat, keyPrefix),
         type: 'feature',
         label: feat,
         count: list.length,
@@ -94,7 +95,7 @@ function buildModuleNodes(modules, keyPrefix = '') {
     const modCount = featureNodes.reduce((n, f) => n + f.count, 0);
     const modCases = Object.values(feats).flat();
     return {
-      key: `${keyPrefix}m:${mod}`,
+      key: makeModuleCatalogKey(mod, keyPrefix),
       type: 'module',
       label: mod,
       count: modCount,

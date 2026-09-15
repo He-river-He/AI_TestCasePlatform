@@ -32,7 +32,9 @@ export default function KnowledgePanel({ projectId }) {
   const [loadError, setLoadError] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const [chunkDrawer, setChunkDrawer] = useState({ open: false, doc: null, chunks: [], loading: false });
+  const [chunkDrawer, setChunkDrawer] = useState({
+    open: false, doc: null, chunks: [], loading: false, error: false,
+  });
 
   const [docKeyword, setDocKeyword] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,7 +67,7 @@ export default function KnowledgePanel({ projectId }) {
     try {
       await uploadKnowledgeDoc(projectId, file);
       message.success(`「${file.name}」已入库`);
-      load();
+      await load();
     } catch (err) {
       message.error(err.response?.data?.detail || '入库失败，请检查 Embedding 模型配置');
     } finally {
@@ -75,18 +77,26 @@ export default function KnowledgePanel({ projectId }) {
   };
 
   const handleDelete = async (doc) => {
-    await deleteKnowledgeDoc(projectId, doc.id);
-    message.success('已删除');
-    load();
+    try {
+      await deleteKnowledgeDoc(projectId, doc.id);
+      message.success('已删除');
+      if (chunkDrawer.doc?.id === doc.id) {
+        setChunkDrawer({ open: false, doc: null, chunks: [], loading: false, error: false });
+      }
+      await load();
+    } catch (err) {
+      message.error(err.response?.data?.detail || '删除知识文档失败');
+    }
   };
 
   const openChunks = async (doc) => {
-    setChunkDrawer({ open: true, doc, chunks: [], loading: true });
+    setChunkDrawer({ open: true, doc, chunks: [], loading: true, error: false });
     try {
       const chunks = await getKnowledgeChunks(projectId, doc.id);
-      setChunkDrawer((prev) => ({ ...prev, chunks, loading: false }));
-    } catch {
-      setChunkDrawer((prev) => ({ ...prev, loading: false }));
+      setChunkDrawer((prev) => ({ ...prev, chunks, loading: false, error: false }));
+    } catch (err) {
+      setChunkDrawer((prev) => ({ ...prev, loading: false, error: true }));
+      message.error(err.response?.data?.detail || '加载文档分块失败');
     }
   };
 
@@ -265,24 +275,30 @@ export default function KnowledgePanel({ projectId }) {
         title={chunkDrawer.doc ? `分块预览：${chunkDrawer.doc.title}` : '分块预览'}
         open={chunkDrawer.open}
         width={560}
-        onClose={() => setChunkDrawer({ open: false, doc: null, chunks: [], loading: false })}
+        onClose={() => setChunkDrawer({
+          open: false, doc: null, chunks: [], loading: false, error: false,
+        })}
       >
-        <List
-          size="small"
-          loading={chunkDrawer.loading}
-          dataSource={chunkDrawer.chunks}
-          renderItem={(chunk, idx) => (
-            <List.Item>
-              <div style={{ width: '100%' }}>
-                <div style={{ marginBottom: 4, fontWeight: 600, fontSize: 13 }}>
-                  #{idx + 1}
-                  {chunk.heading && <Tag style={{ marginLeft: 8 }}>{chunk.heading}</Tag>}
+        {chunkDrawer.error ? (
+          <Empty description="文档分块加载失败，请关闭后重试" />
+        ) : (
+          <List
+            size="small"
+            loading={chunkDrawer.loading}
+            dataSource={chunkDrawer.chunks}
+            renderItem={(chunk, idx) => (
+              <List.Item>
+                <div style={{ width: '100%' }}>
+                  <div style={{ marginBottom: 4, fontWeight: 600, fontSize: 13 }}>
+                    #{idx + 1}
+                    {chunk.heading && <Tag style={{ marginLeft: 8 }}>{chunk.heading}</Tag>}
+                  </div>
+                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{chunk.content}</div>
                 </div>
-                <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{chunk.content}</div>
-              </div>
-            </List.Item>
-          )}
-        />
+              </List.Item>
+            )}
+          />
+        )}
       </Drawer>
     </div>
   );

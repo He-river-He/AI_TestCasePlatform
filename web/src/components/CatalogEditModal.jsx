@@ -16,8 +16,12 @@ export default function CatalogEditModal({
   }, [open, target, form]);
 
   const handleOk = async () => {
-    const values = await form.validateFields();
-    await onSave(values.name.trim());
+    try {
+      const values = await form.validateFields();
+      await onSave(values.name.trim());
+    } catch (err) {
+      if (!err?.errorFields) throw err;
+    }
   };
 
   return (

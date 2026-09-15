@@ -31,6 +31,7 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('active');
   const [form] = Form.useForm();
@@ -51,12 +52,21 @@ export default function ProjectList() {
   useEffect(() => { load(); }, []);
 
   const handleCreate = async () => {
-    const values = await form.validateFields();
-    await createProject(values);
-    message.success('项目创建成功');
-    setOpen(false);
-    form.resetFields();
-    load();
+    setCreating(true);
+    try {
+      const values = await form.validateFields();
+      await createProject(values);
+      message.success('项目创建成功');
+      setOpen(false);
+      form.resetFields();
+      await load();
+    } catch (err) {
+      if (!err?.errorFields) {
+        message.error(err?.response?.data?.detail || '项目创建失败');
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   const projects = overview?.projects || [];
@@ -118,9 +128,13 @@ export default function ProjectList() {
             okType: 'danger',
             cancelText: '取消',
             onOk: async () => {
-              await deleteProject(project.id);
-              message.success('已删除');
-              load();
+              try {
+                await deleteProject(project.id);
+                message.success('已删除');
+                await load();
+              } catch (err) {
+                message.error(err?.response?.data?.detail || '删除项目失败');
+              }
             },
           });
         },
@@ -313,6 +327,7 @@ export default function ProjectList() {
         onCancel={() => setOpen(false)}
         okText="创建"
         cancelText="取消"
+        confirmLoading={creating}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item name="name" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>

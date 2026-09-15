@@ -1,5 +1,5 @@
 import { ApartmentOutlined, DatabaseOutlined, EditOutlined, FolderOutlined, PlayCircleOutlined, ProjectOutlined, UnorderedListOutlined } from '@ant-design/icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { App, Button, Card, Empty, Input, Segmented, Select, Space, Spin, Table, Tag, Tooltip, Tree } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import CatalogEditModal from '../components/CatalogEditModal';
@@ -8,6 +8,9 @@ import TestCaseEditModal from '../components/TestCaseEditModal';
 import TestCaseMindmap from '../components/TestCaseMindmap';
 import { getAllTestcases, renameTestcaseCatalog, updateTestcase } from '../services/api';
 import { stepsToText, textToSteps } from '../utils/caseText';
+import {
+  makeFeatureCatalogKey, makeModuleCatalogKey, parseModuleFeatureCatalogKey,
+} from '../utils/catalogKeys';
 
 const DEFAULT_MODULE = '未分类';
 const DEFAULT_FEATURE = '未关联功能点';
@@ -29,18 +32,19 @@ function parseTreeKey(key) {
   if (!projectPart || !modulePart) return null;
 
   const projectId = Number(projectPart.slice(2));
-  const module = modulePart.slice(2);
+  const parsed = parseModuleFeatureCatalogKey(key);
+  if (!parsed) return null;
 
-  if (featurePart) {
+  if (featurePart && parsed.feature !== null) {
     return {
       type: 'feature',
       projectId,
-      module,
-      feature: featurePart.slice(2),
+      module: parsed.module,
+      feature: parsed.feature,
       key,
     };
   }
-  return { type: 'module', projectId, module, key };
+  return { type: 'module', projectId, module: parsed.module, key };
 }
 
 function isCatalogEditable(meta) {
@@ -57,8 +61,8 @@ function remapSelectedKey(selectedKey, renameInfo) {
   if (!selectedKey || selectedKey === 'all') return selectedKey;
 
   if (type === 'module') {
-    const oldPrefix = `p:${projectId}|m:${oldModule}`;
-    const newPrefix = `p:${projectId}|m:${newName}`;
+    const oldPrefix = makeModuleCatalogKey(oldModule, `p:${projectId}|`);
+    const newPrefix = makeModuleCatalogKey(newName, `p:${projectId}|`);
     if (selectedKey === oldPrefix) return newPrefix;
     if (selectedKey.startsWith(`${oldPrefix}|`)) {
       return selectedKey.replace(oldPrefix, newPrefix);
@@ -66,8 +70,8 @@ function remapSelectedKey(selectedKey, renameInfo) {
   }
 
   if (type === 'feature') {
-    const oldKey = `p:${projectId}|m:${oldModule}|f:${oldFeature}`;
-    const newKey = `p:${projectId}|m:${oldModule}|f:${newName}`;
+    const oldKey = makeFeatureCatalogKey(oldModule, oldFeature, `p:${projectId}|`);
+    const newKey = makeFeatureCatalogKey(oldModule, newName, `p:${projectId}|`);
     if (selectedKey === oldKey) return newKey;
   }
 
@@ -135,11 +139,11 @@ function buildTreeData(cases, singleProject = false) {
       children: Object.entries(proj.modules).map(([mod, feats]) => {
         const modCount = Object.values(feats).reduce((n, list) => n + list.length, 0);
         return {
-          key: `p:${pid}|m:${mod}`,
+          key: makeModuleCatalogKey(mod, `p:${pid}|`),
           title: `${mod} (${modCount})`,
           icon: <FolderOutlined />,
           children: Object.entries(feats).map(([feat, list]) => ({
-            key: `p:${pid}|m:${mod}|f:${feat}`,
+            key: makeFeatureCatalogKey(mod, feat, `p:${pid}|`),
             title: `${feat} (${list.length})`,
             isLeaf: true,
           })),
@@ -165,22 +169,20 @@ function filterCases(cases, selectedKey) {
 
   const parts = selectedKey.split('|');
   const projectPart = parts.find(p => p.startsWith('p:'));
-  const modulePart = parts.find(p => p.startsWith('m:'));
-  const featurePart = parts.find(p => p.startsWith('f:'));
+  const parsed = parseModuleFeatureCatalogKey(selectedKey);
 
-  if (projectPart && modulePart && featurePart) {
+  if (projectPart && parsed?.module && parsed.feature !== null) {
     const pid = Number(projectPart.slice(2));
-    const mod = modulePart.slice(2);
-    const feat = featurePart.slice(2);
+    const { module: mod, feature: feat } = parsed;
     return cases.filter(
       c => c.project_id === pid
         && (c.module?.trim() || '未分类') === mod
         && (c.feature?.trim() || '未关联功能点') === feat,
     );
   }
-  if (projectPart && modulePart) {
+  if (projectPart && parsed?.module) {
     const pid = Number(projectPart.slice(2));
-    const mod = modulePart.slice(2);
+    const { module: mod } = parsed;
     return cases.filter(
       c => c.project_id === pid && (c.module?.trim() || '未分类') === mod,
     );
@@ -236,26 +238,34 @@ export default function TestCaseLibrary({ scopeProjectId }) {
   const [typeFilter, setTypeFilter] = useState(null);
   const [sourceFilter, setSourceFilter] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     setLoading(true);
     setLoadError(false);
-    getAllTestcases(scopeProjectId || undefined)
-      .then(setCases)
-      .catch(() => {
-        setCases([]);
-        setLoadError(true);
-      })
-      .finally(() => setLoading(false));
+    try {
+      setCases(await getAllTestcases(scopeProjectId || undefined));
+    } catch {
+      setCases([]);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, [scopeProjectId]);
 
+  useEffect(() => { load(); }, [load]);
+
   useEffect(() => {
-    if (projectFilter) setSelectedKey(`p:${projectFilter}`);
+    setSelectedKey(projectFilter ? `p:${projectFilter}` : 'all');
   }, [projectFilter]);
 
   useEffect(() => {
     if (!projectFilter) return;
     setExpandedKeys((prev) => (prev.includes(`p:${projectFilter}`) ? prev : [...prev, `p:${projectFilter}`]));
   }, [projectFilter]);
+
+  useEffect(() => {
+    const validKeys = new Set(cases.map((c) => c.id));
+    setSelectedRowKeys((prev) => prev.filter((key) => validKeys.has(key)));
+  }, [cases]);
 
   const treeData = useMemo(() => buildTreeData(cases, !!scopeProjectId), [cases, scopeProjectId]);
   const filteredCases = useMemo(() => {
@@ -430,14 +440,7 @@ export default function TestCaseLibrary({ scopeProjectId }) {
       ) : loadError ? (
         <Card className="surface-card">
           <Empty description="用例加载失败，请重试">
-            <Button onClick={() => {
-              setLoading(true);
-              setLoadError(false);
-              getAllTestcases(scopeProjectId || undefined)
-                .then(setCases)
-                .catch(() => setLoadError(true))
-                .finally(() => setLoading(false));
-            }}>重新加载</Button>
+            <Button onClick={load}>重新加载</Button>
           </Empty>
         </Card>
       ) : cases.length === 0 ? (

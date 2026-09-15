@@ -62,6 +62,8 @@ export default function GenerateFlow() {
   const [flImportFile, setFlImportFile] = useState(null);
   const [draftExporting, setDraftExporting] = useState(false);
   const pollTimerRef = useRef(null);
+  const pollBusyRef = useRef(false);
+  const pollGenerationRef = useRef(0);
 
   const strategies = useMemo(() => mapStrategies(skillCatalog), [skillCatalog]);
   const specialistOptions = useMemo(() => mapSpecialists(skillCatalog), [skillCatalog]);
@@ -194,7 +196,10 @@ export default function GenerateFlow() {
 
   useEffect(() => {
     return () => {
+      pollGenerationRef.current += 1;
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+      pollBusyRef.current = false;
     };
   }, [projectId]);
 
@@ -234,7 +239,7 @@ export default function GenerateFlow() {
         .catch(() => message.error('加载需求文档失败'))
         .finally(() => setSearchParams({}, { replace: true }));
     }
-  }, [projectId]);
+  }, [projectId, searchParams, setSearchParams]);
 
   const syncDraftSelection = (drafts) => {
     if (!drafts?.length) return;
@@ -311,6 +316,8 @@ export default function GenerateFlow() {
       setSelectedPreset('full');
       setSpecialistSkills([]);
       goToStep(3);
+    } catch (err) {
+      message.error(err.response?.data?.detail || '确认功能点失败');
     } finally {
       setLoading(false);
     }
@@ -356,10 +363,16 @@ export default function GenerateFlow() {
   };
 
   const pollTask = (taskId) => {
+    pollGenerationRef.current += 1;
+    const generation = pollGenerationRef.current;
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = null;
     pollTimerRef.current = setInterval(async () => {
+      if (pollBusyRef.current) return;
+      pollBusyRef.current = true;
       try {
         const t = await getGeneration(projectId, taskId);
+        if (pollGenerationRef.current !== generation) return;
         setTask(t);
         syncDraftSelection(t.drafts || []);
         if (['completed', 'failed', 'paused'].includes(t.status)) {
@@ -370,7 +383,9 @@ export default function GenerateFlow() {
           else if (t.status === 'paused') message.info('生成已暂停，可随时继续');
         }
       } catch {
-        // A transient polling error should not leave a running task without updates.
+        // Keep polling through transient network errors; the next tick can recover.
+      } finally {
+        pollBusyRef.current = false;
       }
     }, 1500);
   };
@@ -398,7 +413,7 @@ export default function GenerateFlow() {
     try {
       const resumed = await resumeGeneration(projectId, task.id);
       setTask(resumed);
-      message.success(task.status === 'paused' ? '已继续生成' : '已从最近检查点继续生成');
+      message.success(resumed.status === 'paused' ? '已继续生成' : '已从最近检查点继续生成');
       pollTask(task.id);
     } catch (err) {
       message.error(err.response?.data?.detail || '恢复任务失败');
@@ -413,12 +428,16 @@ export default function GenerateFlow() {
       return d && !['adopted', 'rejected'].includes(d.review_status);
     });
     if (!toAdopt.length) return message.warning('请选择未采纳的用例');
-    await reviewDrafts(projectId, task.id, { draft_ids: toAdopt, action: 'adopt' });
-    message.success(`已采纳 ${toAdopt.length} 条用例`);
-    const t = await getGeneration(projectId, task.id);
-    setTask(t);
-    syncDraftSelection(t.drafts || []);
-    if ((t.review_stats?.pending ?? 1) === 0) goToStep(5);
+    try {
+      await reviewDrafts(projectId, task.id, { draft_ids: toAdopt, action: 'adopt' });
+      message.success(`已采纳 ${toAdopt.length} 条用例`);
+      const t = await getGeneration(projectId, task.id);
+      setTask(t);
+      syncDraftSelection(t.drafts || []);
+      if ((t.review_stats?.pending ?? 1) === 0) goToStep(5);
+    } catch (err) {
+      message.error(err.response?.data?.detail || '采纳用例失败');
+    }
   };
 
   const handleReject = async (rejectReason = '') => {
@@ -427,22 +446,30 @@ export default function GenerateFlow() {
       return d && !['adopted', 'rejected'].includes(d.review_status);
     });
     if (!toReject.length) return message.warning('请选择未处理的用例');
-    await reviewDrafts(projectId, task.id, { draft_ids: toReject, action: 'reject', reject_reason: rejectReason });
-    message.success(`已驳回 ${toReject.length} 条用例`);
-    const t = await getGeneration(projectId, task.id);
-    setTask(t);
-    syncDraftSelection(t.drafts || []);
-    if ((t.review_stats?.pending ?? 1) === 0) goToStep(5);
+    try {
+      await reviewDrafts(projectId, task.id, { draft_ids: toReject, action: 'reject', reject_reason: rejectReason });
+      message.success(`已驳回 ${toReject.length} 条用例`);
+      const t = await getGeneration(projectId, task.id);
+      setTask(t);
+      syncDraftSelection(t.drafts || []);
+      if ((t.review_stats?.pending ?? 1) === 0) goToStep(5);
+    } catch (err) {
+      message.error(err.response?.data?.detail || '驳回用例失败');
+    }
   };
 
   // 脑图详情抽屉里对单条草稿变更评审结果
   const handleReviewSingle = async (draftId, action, rejectReason = '') => {
-    await reviewDrafts(projectId, task.id, { draft_ids: [draftId], action, reject_reason: rejectReason });
-    const labels = { adopt: '已采纳', reject: '已驳回', to_confirm: '已标记为待确认' };
-    message.success(labels[action] || '已更新');
-    const t = await getGeneration(projectId, task.id);
-    setTask(t);
-    syncDraftSelection(t.drafts || []);
+    try {
+      await reviewDrafts(projectId, task.id, { draft_ids: [draftId], action, reject_reason: rejectReason });
+      const labels = { adopt: '已采纳', reject: '已驳回', to_confirm: '已标记为待确认' };
+      message.success(labels[action] || '已更新');
+      const t = await getGeneration(projectId, task.id);
+      setTask(t);
+      syncDraftSelection(t.drafts || []);
+    } catch (err) {
+      message.error(err.response?.data?.detail || '更新评审结果失败');
+    }
   };
 
   const handleMarkConfirm = async () => {
@@ -451,11 +478,15 @@ export default function GenerateFlow() {
       return d && !['adopted', 'rejected'].includes(d.review_status);
     });
     if (!toMark.length) return message.warning('请选择未处理的用例');
-    await reviewDrafts(projectId, task.id, { draft_ids: toMark, action: 'to_confirm' });
-    message.success(`已标记 ${toMark.length} 条为待确认`);
-    const t = await getGeneration(projectId, task.id);
-    setTask(t);
-    syncDraftSelection(t.drafts || []);
+    try {
+      await reviewDrafts(projectId, task.id, { draft_ids: toMark, action: 'to_confirm' });
+      message.success(`已标记 ${toMark.length} 条为待确认`);
+      const t = await getGeneration(projectId, task.id);
+      setTask(t);
+      syncDraftSelection(t.drafts || []);
+    } catch (err) {
+      message.error(err.response?.data?.detail || '标记用例失败');
+    }
   };
 
   const handleSelectAllDrafts = () => {
@@ -485,9 +516,9 @@ export default function GenerateFlow() {
   };
 
   const saveItem = async () => {
-    const values = await itemForm.validateFields();
     setLoading(true);
     try {
+      const values = await itemForm.validateFields();
       if (editingItem) {
         const updated = await updateRequirementItem(projectId, document.id, editingItem.id, values);
         setDocument(prev => ({
@@ -508,6 +539,7 @@ export default function GenerateFlow() {
       }
       setItemModalOpen(false);
     } catch (err) {
+      if (err?.errorFields) return;
       message.error(err.response?.data?.detail || '保存失败');
     } finally {
       setLoading(false);
@@ -515,14 +547,18 @@ export default function GenerateFlow() {
   };
 
   const removeItem = async (itemId) => {
-    await deleteRequirementItem(projectId, document.id, itemId);
-    setDocument(prev => ({
-      ...prev,
-      status: 'structured',
-      items: prev.items.filter(i => i.id !== itemId),
-    }));
-    setSelectedItems(prev => prev.filter(id => id !== itemId));
-    message.success('已删除');
+    try {
+      await deleteRequirementItem(projectId, document.id, itemId);
+      setDocument(prev => ({
+        ...prev,
+        status: 'structured',
+        items: prev.items.filter(i => i.id !== itemId),
+      }));
+      setSelectedItems(prev => prev.filter(id => id !== itemId));
+      message.success('已删除');
+    } catch (err) {
+      message.error(err.response?.data?.detail || '删除功能点失败');
+    }
   };
 
   const openEditDraft = (draft) => {
@@ -539,9 +575,9 @@ export default function GenerateFlow() {
   };
 
   const saveDraft = async () => {
-    const values = await draftForm.validateFields();
     setLoading(true);
     try {
+      const values = await draftForm.validateFields();
       const payload = {
         title: values.title,
         priority: values.priority,
@@ -558,6 +594,7 @@ export default function GenerateFlow() {
       message.success('用例已更新');
       setDraftModalOpen(false);
     } catch (err) {
+      if (err?.errorFields) return;
       message.error(err.response?.data?.detail || '保存失败');
     } finally {
       setLoading(false);

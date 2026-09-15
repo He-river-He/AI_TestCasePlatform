@@ -26,8 +26,12 @@ export default function TestCaseEditModal({
   }, [open, testcase, form]);
 
   const handleOk = async () => {
-    const values = await form.validateFields();
-    await onSave(values);
+    try {
+      const values = await form.validateFields();
+      await onSave(values);
+    } catch (err) {
+      if (!err?.errorFields) throw err;
+    }
   };
 
   return (

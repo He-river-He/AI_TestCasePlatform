@@ -283,14 +283,14 @@ export default function AppLayout() {
       .then(setOverview)
       .catch(() => setOverview(null))
       .finally(() => setLoadingOverview(false));
-  }, [location.pathname]);
+  }, [projectId]);
 
   // API Key 未配置时在头像和设置入口上显示红点，把配置缺失提前暴露出来
   useEffect(() => {
     getSettings()
       .then((data) => setNeedsSetup(!data.llm_api_key_set && !data.llm_mock_mode))
       .catch(() => setNeedsSetup(false));
-  }, [location.pathname]);
+  }, []);
 
   useEffect(() => {
     if (!projectId) {

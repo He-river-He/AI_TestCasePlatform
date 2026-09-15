@@ -1,6 +1,6 @@
 import { FolderOutlined } from '@ant-design/icons';
-import { Empty, Select, Spin } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { Button, Empty, Select, Spin } from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import KnowledgePanel from '../components/KnowledgePanel';
 import PageHeader from '../components/PageHeader';
@@ -9,10 +9,20 @@ import { getProjects } from '../services/api';
 export default function Knowledge() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [projects, setProjects] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    getProjects().then(setProjects).catch(() => setProjects([]));
+  const loadProjects = useCallback(async () => {
+    setProjects(null);
+    setLoadError(false);
+    try {
+      setProjects(await getProjects());
+    } catch {
+      setProjects([]);
+      setLoadError(true);
+    }
   }, []);
+
+  useEffect(() => { loadProjects(); }, [loadProjects]);
 
   const projectId = useMemo(() => {
     const fromUrl = Number(searchParams.get('project'));
@@ -26,6 +36,17 @@ export default function Knowledge() {
 
   if (projects === null) {
     return <div style={{ textAlign: 'center', padding: 80 }}><Spin /></div>;
+  }
+
+  if (loadError) {
+    return (
+      <div>
+        <PageHeader title="知识库" description="加载项目列表后管理项目知识文档" />
+        <Empty description="项目列表加载失败，请重试">
+          <Button type="primary" onClick={loadProjects}>重新加载</Button>
+        </Empty>
+      </div>
+    );
   }
 
   return (

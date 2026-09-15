@@ -14,6 +14,9 @@ import {
   getTestcases, getTestTaskDetail, markBatchCase, updateBatch, updateTestTask,
 } from '../services/api';
 import { stepsToText } from '../utils/caseText';
+import {
+  makeFeatureCatalogKey, makeModuleCatalogKey, parseModuleFeatureCatalogKey,
+} from '../utils/catalogKeys';
 import { BATCH_PRESETS, RESULT_COLOR, RESULT_LABEL, RESULT_TAG_COLOR, RUN_STATUS_LABEL } from '../utils/runResult';
 
 const DEFAULT_MODULE = '未分类';
@@ -59,11 +62,11 @@ function buildTree(cases) {
     children: Object.entries(modules).map(([mod, feats]) => {
       const modCases = Object.values(feats).flat();
       return {
-        key: `m:${mod}`,
+        key: makeModuleCatalogKey(mod),
         icon: <FolderOutlined />,
         title: <span className="run-tree-title">{mod}<NodeBadge list={modCases} /></span>,
         children: Object.entries(feats).map(([feat, list]) => ({
-          key: `m:${mod}|f:${feat}`,
+          key: makeFeatureCatalogKey(mod, feat),
           isLeaf: true,
           title: <span className="run-tree-title">{feat}<NodeBadge list={list} /></span>,
         })),
@@ -74,10 +77,10 @@ function buildTree(cases) {
 
 function filterByKey(cases, key) {
   if (!key || key === 'all') return cases;
-  const [modPart, featPart] = key.split('|');
-  const mod = modPart.slice(2);
-  if (!featPart) return cases.filter((c) => normalizeModule(c.module) === mod);
-  const feat = featPart.slice(2);
+  const parsed = parseModuleFeatureCatalogKey(key);
+  if (!parsed) return cases;
+  const { module: mod, feature: feat } = parsed;
+  if (feat === null) return cases.filter((c) => normalizeModule(c.module) === mod);
   return cases.filter((c) => normalizeModule(c.module) === mod && normalizeFeature(c.feature) === feat);
 }
 
@@ -117,6 +120,7 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
   const { message, modal } = App.useApp();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [selectedKey, setSelectedKey] = useState('all');
   const [resultFilter, setResultFilter] = useState('all');
@@ -128,9 +132,12 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
+    setDetail(null);
     try {
       setDetail(await getBatchDetail(pid, taskId, batch.id));
     } catch {
+      setLoadError(true);
       message.error('加载批次失败');
     } finally {
       setLoading(false);
@@ -210,10 +217,10 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
   };
 
   const handleMarkSubmit = async () => {
-    const values = await markForm.validateFields();
-    const { batchCases, result } = markTarget;
     setMarkSaving(true);
     try {
+      const values = await markForm.validateFields();
+      const { batchCases, result } = markTarget;
       let updated = null;
       for (const bc of batchCases) {
         updated = await markBatchCase(pid, taskId, batch.id, bc.id, {
@@ -226,7 +233,9 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
       setMarkTarget(null);
       markForm.resetFields();
     } catch (err) {
-      message.error(err?.response?.data?.detail || '标记失败');
+      if (!err?.errorFields) {
+        message.error(err?.response?.data?.detail || '标记失败');
+      }
     } finally {
       setMarkSaving(false);
     }
@@ -234,7 +243,7 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
 
   const toggleBatchStatus = async () => {
     const next = detail.status === 'completed' ? 'in_progress' : 'completed';
-    if (next === 'completed' && stats.pending > 0) {
+    if (next === 'completed' && (stats?.pending || 0) > 0) {
       const ok = await new Promise((resolve) => {
         modal.confirm({
           title: '还有未执行的用例',
@@ -298,8 +307,17 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
     },
   ];
 
-  if (loading || !detail) {
+  if (loading) {
     return <Card className="surface-card"><div style={{ textAlign: 'center', padding: 60 }}><Spin /></div></Card>;
+  }
+  if (loadError || !detail) {
+    return (
+      <Card className="surface-card">
+        <Empty description="批次加载失败，请重试">
+          <Button onClick={load}>重新加载</Button>
+        </Empty>
+      </Card>
+    );
   }
 
   const batchMenu = {
@@ -457,17 +475,25 @@ function DefectsPanel({ pid, taskId, onJumpToBatch }) {
   const { message } = App.useApp();
   const [defects, setDefects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [includeBlocked, setIncludeBlocked] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let ignore = false;
     setLoading(true);
+    setLoadError(false);
     getTaskDefects(pid, taskId, includeBlocked)
       .then((list) => { if (!ignore) setDefects(list); })
-      .catch(() => { if (!ignore) message.error('加载缺陷列表失败'); })
+      .catch(() => {
+        if (ignore) return;
+        setDefects([]);
+        setLoadError(true);
+        message.error('加载缺陷列表失败');
+      })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [pid, taskId, includeBlocked]);
+  }, [pid, taskId, includeBlocked, retryKey]);
 
   const columns = [
     { title: '用例标题', dataIndex: 'title', ellipsis: true, className: 'key-text-cell' },
@@ -529,14 +555,20 @@ function DefectsPanel({ pid, taskId, onJumpToBatch }) {
         </Checkbox>
       )}
     >
-      <Table
-        rowKey="batch_case_id"
-        loading={loading}
-        dataSource={defects}
-        columns={columns}
-        pagination={{ pageSize: 20, showSizeChanger: true }}
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无失败用例，继续保持" /> }}
-      />
+      {loadError ? (
+        <Empty description="缺陷列表加载失败，请重试">
+          <Button onClick={() => setRetryKey((prev) => prev + 1)}>重新加载</Button>
+        </Empty>
+      ) : (
+        <Table
+          rowKey="batch_case_id"
+          loading={loading}
+          dataSource={defects}
+          columns={columns}
+          pagination={{ pageSize: 20, showSizeChanger: true }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无失败用例，继续保持" /> }}
+        />
+      )}
     </Card>
   );
 }
@@ -551,10 +583,10 @@ function buildCaseTree(cases) {
     modules[mod][feat].push(c);
   });
   return Object.entries(modules).map(([mod, feats]) => ({
-    key: `m:${mod}`,
+    key: makeModuleCatalogKey(mod),
     title: `${mod} (${Object.values(feats).reduce((n, list) => n + list.length, 0)})`,
     children: Object.entries(feats).map(([feat, list]) => ({
-      key: `m:${mod}|f:${feat}`,
+      key: makeFeatureCatalogKey(mod, feat),
       title: `${feat} (${list.length})`,
       children: list.map((c) => ({ key: `c:${c.id}`, title: c.title })),
     })),
@@ -574,6 +606,7 @@ export default function TestTaskDetail() {
   const { message, modal } = App.useApp();
   const [task, setTask] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeKey, setActiveKey] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [batchCreating, setBatchCreating] = useState(false);
@@ -585,6 +618,8 @@ export default function TestTaskDetail() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
+    setTask(null);
     try {
       const t = await getTestTaskDetail(pid, tid);
       setTask(t);
@@ -593,6 +628,7 @@ export default function TestTaskDetail() {
         return t.batches.length ? `b:${t.batches[0].id}` : 'defects';
       });
     } catch {
+      setLoadError(true);
       message.error('加载测试任务失败');
     } finally {
       setLoading(false);
@@ -667,28 +703,31 @@ export default function TestTaskDetail() {
     setCasesLoading(true);
     getTestcases(pid)
       .then(setAllCases)
-      .catch(() => message.error('加载用例失败'))
+      .catch(() => {
+        setAllCases([]);
+        message.error('加载用例失败');
+      })
       .finally(() => setCasesLoading(false));
-  }, [batchModalOpen, caseSource]);
+  }, [batchModalOpen, caseSource, pid]);
 
   const caseTreeData = useMemo(() => buildCaseTree(allCases), [allCases]);
   const selectedCount = useMemo(() => extractCaseIds(checkedKeys).length, [checkedKeys]);
 
   const handleCreateBatch = async () => {
-    const values = await batchForm.validateFields();
-    const payload = { name: values.name };
-    if (caseSource === 'copy') {
-      payload.copy_from_batch_id = values.copy_from_batch_id;
-    } else {
-      const caseIds = extractCaseIds(checkedKeys);
-      if (!caseIds.length) {
-        message.warning('请至少选择一条用例');
-        return;
-      }
-      payload.case_ids = caseIds;
-    }
     setBatchCreating(true);
     try {
+      const values = await batchForm.validateFields();
+      const payload = { name: values.name };
+      if (caseSource === 'copy') {
+        payload.copy_from_batch_id = values.copy_from_batch_id;
+      } else {
+        const caseIds = extractCaseIds(checkedKeys);
+        if (!caseIds.length) {
+          message.warning('请至少选择一条用例');
+          return;
+        }
+        payload.case_ids = caseIds;
+      }
       const updated = await createBatch(pid, tid, payload);
       message.success('批次已创建');
       setBatchModalOpen(false);
@@ -696,7 +735,9 @@ export default function TestTaskDetail() {
       const newBatch = updated.batches[updated.batches.length - 1];
       if (newBatch) setActiveKey(`b:${newBatch.id}`);
     } catch (err) {
-      message.error(err?.response?.data?.detail || '创建失败');
+      if (!err?.errorFields) {
+        message.error(err?.response?.data?.detail || '创建失败');
+      }
     } finally {
       setBatchCreating(false);
     }
@@ -706,6 +747,17 @@ export default function TestTaskDetail() {
     return (
       <div className="page-wide">
         <Card className="surface-card"><div style={{ textAlign: 'center', padding: 60 }}><Spin /></div></Card>
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div className="page-wide">
+        <Card className="surface-card">
+          <Empty description="测试任务加载失败，请重试">
+            <Button onClick={load}>重新加载</Button>
+          </Empty>
+        </Card>
       </div>
     );
   }

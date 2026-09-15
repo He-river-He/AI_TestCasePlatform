@@ -23,7 +23,7 @@ async def run(inputs:dict,context:SkillContext)->dict:
     raw_content = inputs["raw_content"]
     system_prompt = load_prompt(SKILL_DIR,"prompt.md")
     try:
-        data=generate_test_proposal(system_prompt,raw_content,context.model_config)
+        data=await generate_test_proposal(system_prompt,raw_content,context.model_config)
     except OutputParserException:
         data={}
     return {"scope":_normalize(data)}

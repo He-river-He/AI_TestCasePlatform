@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 import {
-  App, Button, Card, Form, Input, Select, Space, Switch, Tabs, Tag, Tooltip, Typography,
+  App, Button, Card, Empty, Form, Input, Select, Space, Switch, Tabs, Tag, Tooltip, Typography,
 } from 'antd';
 import PageHeader from '../components/PageHeader';
 import { getSettings, testModelConnection, updateSettings } from '../services/api';
@@ -212,6 +212,7 @@ export default function Settings() {
   const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState('');
   const [status, setStatus] = useState({ use_mock_llm: true, llm_api_key_set: false, llm_api_key_masked: '' });
@@ -219,6 +220,7 @@ export default function Settings() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const data = await getSettings();
       setStatus(data);
@@ -240,6 +242,9 @@ export default function Settings() {
         rerank_model: data.rerank_model,
         rerank_api_key: '',
       });
+    } catch {
+      setLoadError(true);
+      message.error('加载模型配置失败');
     } finally {
       setLoading(false);
     }
@@ -301,11 +306,11 @@ export default function Settings() {
   };
 
   const saveTab = async (tab) => {
-    if (tab === 'generation') {
-      await form.validateFields(['llm_base_url', 'llm_model']);
-    }
     setSaving(true);
     try {
+      if (tab === 'generation') {
+        await form.validateFields(['llm_base_url', 'llm_model']);
+      }
       const data = await updateSettings(buildPayload(tab));
       setStatus(data);
       form.setFieldsValue({
@@ -318,6 +323,7 @@ export default function Settings() {
       message.success('配置已保存');
       return true;
     } catch (err) {
+      if (err?.errorFields) return false;
       message.error(err.response?.data?.detail || '保存失败');
       return false;
     } finally {
@@ -368,6 +374,8 @@ export default function Settings() {
         message.success('API Key 已清除');
       }
       setTestResults((prev) => ({ ...prev, [tab]: null }));
+    } catch (err) {
+      message.error(err.response?.data?.detail || '清除配置失败');
     } finally {
       setSaving(false);
     }
@@ -583,10 +591,17 @@ export default function Settings() {
         description="为当前账号配置用例生成、设计稿解析、AI 评测和知识库检索模型，配置互相独立、按页签保存"
       />
 
-      <Form form={form} layout="vertical">
-        <Tabs
-          defaultActiveKey="generation"
-          items={[
+      {loadError ? (
+        <Card className="surface-card">
+          <Empty description="模型配置加载失败，请重试">
+            <Button type="primary" onClick={load}>重新加载</Button>
+          </Empty>
+        </Card>
+      ) : (
+        <Form form={form} layout="vertical">
+          <Tabs
+            defaultActiveKey="generation"
+            items={[
             {
               key: 'generation',
               label: (
@@ -647,9 +662,10 @@ export default function Settings() {
               ),
               children: rerankTab,
             },
-          ]}
-        />
-      </Form>
+            ]}
+          />
+        </Form>
+      )}
     </div>
   );
 }

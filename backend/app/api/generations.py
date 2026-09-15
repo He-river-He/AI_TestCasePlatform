@@ -44,10 +44,10 @@ def _load_task(task_id:int,project_id:int,db:Session) -> GenerationTask:
     return task
 
 async def _run_generation_task(task_id:int,lease:str | None = None):
-    return run_generation_workflow(task_id,lease)
+    return run_generation_workflow(task_id,lease =lease)
 
 async def _resume_generation_task(task_id:int,lease:str | None = None):
-    return resume_generation_workflow(task_id,lease)
+    return resume_generation_workflow(task_id,lease=lease)
 
 # -----------------------------------------------------------------------------------
 @router.post("",response_model=GenerationTaskOut,status_code=201)
@@ -105,10 +105,6 @@ def list_tasks(project_id:int,db:Session=Depends(get_db)):
         .all()
     )
 
-@router.get("/{task_id}",response_model=GenerationTaskOut)
-def get_task(project_id:int,task_id:int,db:Session=Depends(get_db)):
-    return _load_task(task_id,project_id,db)
-
 @router.get("/summary",response_model=list[GenerationTaskSummaryOut])
 def list_task_summaries(project_id:int,db:Session=Depends(get_db)):
     """生成记录列表:只返回统计信息,不返回草稿明细"""
@@ -152,6 +148,10 @@ def list_task_summaries(project_id:int,db:Session=Depends(get_db)):
             )
         )
     return result
+
+@router.get("/{task_id}",response_model=GenerationTaskOut)
+def get_task(project_id:int,task_id:int,db:Session=Depends(get_db)):
+    return _load_task(task_id,project_id,db)
 
 # 暂停和恢复
 @router.post("/{task_id}/pause",response_model=GenerationTaskOut)

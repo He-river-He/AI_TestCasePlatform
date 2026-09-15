@@ -4,6 +4,8 @@ import axios from 'axios';
 const AUTH_KEY = 'aitc_auth';
 const APP_BASE = import.meta.env.BASE_URL || '/';
 const API_BASE = `${APP_BASE.replace(/\/$/, '')}/api`;
+const LOGIN_PATH = `${APP_BASE.replace(/\/$/, '')}/login`;
+let authRedirecting = false;
 
 export const getAuth = () => {
   try {
@@ -31,8 +33,10 @@ api.interceptors.response.use(
       .some(path => requestUrl.endsWith(path));
     if (error.response?.status === 401 && !isPublicAuthRequest) {
       clearAuth();
-      const loginPath = `${APP_BASE}login`;
-      if (window.location.pathname !== loginPath) window.location.assign(loginPath);
+      if (!authRedirecting && window.location.pathname !== LOGIN_PATH) {
+        authRedirecting = true;
+        window.location.assign(LOGIN_PATH);
+      }
     }
     return Promise.reject(error);
   },

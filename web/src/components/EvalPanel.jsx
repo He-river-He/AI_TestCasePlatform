@@ -74,6 +74,7 @@ export default function EvalPanel() {
   const [caseLoading, setCaseLoading] = useState(false);
   const [caseFilter, setCaseFilter] = useState('problem');
   const pollRef = useRef(null);
+  const pollBusyRef = useRef(false);
 
   const loadAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -84,7 +85,7 @@ export default function EvalPanel() {
       return r;
     } catch {
       if (!silent) message.error('加载评测数据失败');
-      return [];
+      return null;
     } finally {
       if (!silent) setLoading(false);
     }
@@ -97,14 +98,16 @@ export default function EvalPanel() {
     const hasActive = runs.some(r => ['pending', 'running'].includes(r.status));
     if (hasActive && !pollRef.current) {
       pollRef.current = setInterval(async () => {
+        if (pollBusyRef.current) return;
+        pollBusyRef.current = true;
         try {
           const latest = await loadAll(true);
-          if (!latest.some(r => ['pending', 'running'].includes(r.status))) {
+          if (latest && !latest.some(r => ['pending', 'running'].includes(r.status))) {
             clearInterval(pollRef.current);
             pollRef.current = null;
           }
-        } catch {
-          // Keep polling through transient network errors; the next tick can recover.
+        } finally {
+          pollBusyRef.current = false;
         }
       }, 3000);
     }
@@ -113,6 +116,7 @@ export default function EvalPanel() {
         clearInterval(pollRef.current);
         pollRef.current = null;
       }
+      pollBusyRef.current = false;
     };
   }, [runs, loadAll]);
 
@@ -127,13 +131,13 @@ export default function EvalPanel() {
   };
 
   const saveSample = async () => {
-    const values = await sampleForm.validateFields();
-    const payload = {
-      title: values.title,
-      content: values.content,
-      checkpoints: textToCheckpoints(values.checkpoints),
-    };
     try {
+      const values = await sampleForm.validateFields();
+      const payload = {
+        title: values.title,
+        content: values.content,
+        checkpoints: textToCheckpoints(values.checkpoints),
+      };
       if (editingSample) {
         await updateEvalSample(editingSample.id, payload);
       } else {
@@ -143,6 +147,7 @@ export default function EvalPanel() {
       setSampleModalOpen(false);
       loadAll();
     } catch (err) {
+      if (err?.errorFields) return;
       message.error(err.response?.data?.detail || '保存失败');
     }
   };
@@ -160,14 +165,15 @@ export default function EvalPanel() {
   // ---------- 运行 ----------
 
   const startRun = async () => {
-    const values = await runForm.validateFields();
     try {
+      const values = await runForm.validateFields();
       await createEvalRun(values);
       message.success('评测已启动，请稍候');
       setRunModalOpen(false);
       runForm.resetFields();
       loadAll();
     } catch (err) {
+      if (err?.errorFields) return;
       message.error(err.response?.data?.detail || '启动失败');
     }
   };

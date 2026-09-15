@@ -25,7 +25,7 @@ def compute_project_stage(db:Session,project_id:int) -> dict:
         .first()
     )
     testcase_count = (
-        db.query(TestCase)
+        db.query(func.count(TestCase.id))
         .filter(TestCase.project_id == project_id)
         .scalar()
         or 0
@@ -151,8 +151,8 @@ def get_home_overview(db:Session,user_id:int) -> dict:
     return {
         "total_projects":len(projects),
         "total_testcases":sum(testcase_counts.values()),
-        "total_generation":sum(generation_counts.values()),
-        "project":project_items,
+        "total_generations":sum(generation_counts.values()),
+        "projects":project_items,
         "latest_active_project_id":latest_active_project_id,
         "latest_active_stage":latest_active_stage,
     }

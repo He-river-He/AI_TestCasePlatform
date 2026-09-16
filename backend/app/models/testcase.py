@@ -1,6 +1,6 @@
 from app.database import Base
 from sqlalchemy.orm import Mapped,mapped_column,relationship
-from sqlalchemy import Integer,Boolean,String,func,DateTime,ForeignKey,Text
+from sqlalchemy import Integer,Boolean,String,func,DateTime,ForeignKey,Text,Index
 from datetime import datetime
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -8,6 +8,9 @@ if TYPE_CHECKING:
 
 class TestCase(Base):
     __tablename__ = "testcases"
+    __table_args__ = (
+        Index("uq_testcases_draft_id","draft_id",unique=True),
+    )
 
     id:Mapped[int] = mapped_column(Integer,primary_key=True,autoincrement=True,comment="id")
     project_id:Mapped[int]=mapped_column(ForeignKey("projects.id"),comment="project_id")

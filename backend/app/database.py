@@ -162,6 +162,18 @@ def _migrate_schema(admin_user_id: int):
         if "is_smoke" not in tc_cols:
             conn.exec_driver_sql("ALTER TABLE testcases ADD COLUMN is_smoke BOOLEAN DEFAULT 0")
             conn.commit()
+        duplicate_draft_count = conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM ("
+            "SELECT draft_id FROM testcases WHERE draft_id IS NOT NULL "
+            "GROUP BY draft_id HAVING COUNT(*) > 1"
+            ")"
+        ).scalar_one()
+        if duplicate_draft_count == 0:
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_testcases_draft_id "
+                "ON testcases (draft_id)"
+            )
+            conn.commit()
 
         project_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(projects)").fetchall()}
         if "is_eval" not in project_cols:

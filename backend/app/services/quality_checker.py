@@ -18,7 +18,7 @@ def normalize_steps(case:dict) -> tuple[str,list[str]]:
             if isinstance(parsed,list):
                 steps = parsed
             else:
-                steps=[str[parsed]]
+                steps=[str(parsed)]
         except json.JSONDecodeError:
             steps = [s.strip() for s in text.split("\n") if s.strip()]
     elif not isinstance(steps,list):
@@ -94,7 +94,7 @@ def detect_duplicates(drafts:list) -> int:
                 if _similarity(text_i,f"{other.title} {other.steps}") >= DUPLICATE_THRESHOLD:
                     duplicate_count +=1
                     try:
-                        issues = json.loads(current.qulity_issues or "[]")
+                        issues = json.loads(current.quality_issues or "[]")
                     except json.JSONDecodeError:
                         issues = []
                     issues.append(f"与用例《{other.title}》疑似重复")

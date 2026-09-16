@@ -39,7 +39,7 @@ async def run_generation_workflow(
             await checkpointer.setup()
             graph = build_generation_graph(checkpointer)
             inputs = None if resume else {"task_id":task_id}
-            await graph.invoke(inputs,config=config)
+            await graph.ainvoke(inputs,config=config)
     except GenerationPaused:
         db=SessionLocal()
         try:
@@ -90,5 +90,3 @@ async def run_generation_workflow(
 
 async def resume_generation_workflow(task_id:int,lease:str | None = None) -> None:
     await run_generation_workflow(task_id,resume=True,lease = lease)
-        
-                

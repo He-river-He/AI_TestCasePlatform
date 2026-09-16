@@ -1,6 +1,7 @@
 from app.skills import parse_requirements
 from app.services.settings_service import get_project_runtime_config
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.models.requirement import RequirementDocument,RequirementItem
 from app.models.testcase import TestCase
 from app.models.generation import GenerationTask,GeneratedCaseDraft
@@ -62,37 +63,91 @@ def confirm_requirements(db:Session,document_id:int,item_ids:list[int] | None=No
 
 # --------------------------------------------------------------------------------
 # 采纳测试用例
-def adopt_drafts(db:Session,task_id:int,draft_ids:list[int])->list[TestCase]:
-    task = db.query(GenerationTask).get(task_id)
-    adopted = []
+def _load_drafts_for_adoption(db:Session,task_id:int,draft_ids:list[int])->list[GeneratedCaseDraft]:
+    return (
+        db.query(GeneratedCaseDraft)
+        .filter(
+            GeneratedCaseDraft.task_id == task_id,
+            GeneratedCaseDraft.id.in_(draft_ids),
+        )
+        .order_by(GeneratedCaseDraft.id)
+        .all()
+    )
 
-    for draft_id in draft_ids:
-        draft = db.query(GeneratedCaseDraft).filter(
-            GenerationTask.id==task_id,
-            GeneratedCaseDraft.id==draft_id
-        ).first()
-        if not draft:
+def _apply_draft_adoption(
+    db:Session,
+    task:GenerationTask,
+    drafts:list[GeneratedCaseDraft],
+)->list[TestCase]:
+    draft_ids = [draft.id for draft in drafts]
+    existing_cases = {
+        tc.draft_id: tc
+        for tc in db.query(TestCase)
+        .filter(TestCase.draft_id.in_(draft_ids))
+        .all()
+    }
+
+    adopted = []
+    for draft in drafts:
+        # 驳回是终态；重复请求则复用已入库的正式用例，保证接口幂等。
+        if draft.review_status == "rejected":
             continue
 
-        tc = TestCase(
-            project_id=task.project_id,
-            draft_id=draft.id,
-            requirement_item_id=draft.requirement_item_id,
-            title=draft.title,
-            priority=draft.priority,
-            case_type=draft.case_type,
-            is_smoke=draft.is_smoke,
-            precondition=draft.precondition,
-            steps=draft.steps,
-            expected_result=draft.expected_result,
-            status=draft.status,
-            source="ai_generated"
-        )
-        db.add(tc)
+        tc = existing_cases.get(draft.id)
+        if tc is not None and tc.project_id != task.project_id:
+            raise RuntimeError("候选用例已关联到其他项目，无法采纳")
+
+        if tc is None:
+            tc = TestCase(
+                project_id=task.project_id,
+                draft_id=draft.id,
+                requirement_item_id=draft.requirement_item_id,
+                title=draft.title,
+                priority=draft.priority,
+                case_type=draft.case_type,
+                is_smoke=draft.is_smoke,
+                precondition=draft.precondition,
+                steps=draft.steps,
+                expected_result=draft.expected_result,
+                status="active",
+                source="ai_generated",
+            )
+            db.add(tc)
+            existing_cases[draft.id] = tc
+
         draft.review_status = "adopted"
         adopted.append(tc)
+    return adopted
 
-    db.commit()
+def adopt_drafts(db:Session,task_id:int,draft_ids:list[int])->list[TestCase]:
+    draft_ids = list(dict.fromkeys(draft_ids))
+    task = db.get(GenerationTask,task_id)
+    if not task or not draft_ids:
+        return []
+
+    drafts = _load_drafts_for_adoption(db,task_id,draft_ids)
+    if not drafts:
+        return []
+
+    try:
+        adopted = _apply_draft_adoption(db,task,drafts)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        task = db.get(GenerationTask,task_id)
+        if not task:
+            return []
+        drafts = _load_drafts_for_adoption(db,task_id,draft_ids)
+        try:
+            adopted = _apply_draft_adoption(db,task,drafts)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+    except Exception:
+        db.rollback()
+        raise
+
     for tc in adopted:
         db.refresh(tc)
     return adopted

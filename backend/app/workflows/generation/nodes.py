@@ -197,7 +197,7 @@ async def generate_core_cases(state:GenerationState) -> dict:
     try:
         task = _task_or_raise(db,state["task_id"])
         model_config=get_project_runtime_config(db,task.project_id)
-        context = _skill_context(db,state["strategy"],model_config)
+        context = _skill_context(task,state["strategy"],model_config)
         task.stage = f"生成基础测试用例:{(state.get("current_feature") or {}).get("feature","")}"
         db.commit()
         try:
@@ -299,7 +299,7 @@ async def persist_feature_cases(state:GenerationState) -> dict:
             )
             if draft is None:
                 draft = GeneratedCaseDraft(
-                    taks_id=task.id,
+                    task_id=task.id,
                     requirement_item_id=item_id,
                     generation_key=generation_key
                 )
@@ -352,7 +352,7 @@ async def run_task_judge(state:GenerationState) -> dict:
 async def build_task_report(state:GenerationState) -> dict:
     db=SessionLocal()
     try:
-        task = _task_or_raise(db,state.task_id)
+        task = _task_or_raise(db,state["task_id"])
         task.stage = "生成质检报告"
         task.progress = 95
         items = (
@@ -373,7 +373,7 @@ async def build_task_report(state:GenerationState) -> dict:
         db.add(QualityReport(task_id=task.id,**report_data)) 
         refs = state.get("knowledge_refs") or {}
         task.knowledge_refs = json.dumps(refs,ensure_ascii=False) if refs else ""
-        db.commit
+        db.commit()
         return {}
     finally:
         db.close()

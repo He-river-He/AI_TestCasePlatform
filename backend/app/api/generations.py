@@ -44,10 +44,10 @@ def _load_task(task_id:int,project_id:int,db:Session) -> GenerationTask:
     return task
 
 async def _run_generation_task(task_id:int,lease:str | None = None):
-    return run_generation_workflow(task_id,lease =lease)
+    await run_generation_workflow(task_id,lease =lease)
 
 async def _resume_generation_task(task_id:int,lease:str | None = None):
-    return resume_generation_workflow(task_id,lease=lease)
+    await resume_generation_workflow(task_id,lease=lease)
 
 # -----------------------------------------------------------------------------------
 @router.post("",response_model=GenerationTaskOut,status_code=201)
@@ -243,7 +243,10 @@ def review_drafts(project_id:int,task_id:int,data:ReviewAction,db:Session=Depend
     if not task:
         raise HTTPException(404,"生成任务不存在")
     if data.action=="adopt":
-        return adopt_drafts(db,task_id,data.draft_ids)
+        try:
+            return adopt_drafts(db,task_id,data.draft_ids)
+        except RuntimeError as exc:
+            raise HTTPException(409,str(exc)) from exc
     if data.action=="reject":
         reject_drafts(db,task_id,data.draft_ids,data.reject_reason)
         return []

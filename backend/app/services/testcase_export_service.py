@@ -10,6 +10,7 @@
 from io import BytesIO
 from typing import Any
 import json
+import re
 from openpyxl import Workbook
 from openpyxl.styles import Alignment,Font,PatternFill
 from openpyxl.utils import get_column_letter
@@ -109,7 +110,7 @@ def builder_export_row(case:Any,index:int)->dict:
         "case_type":CASE_TYPE_LABEL.get(case_type,case_type),
         "is_smoke":"是" if is_smoke else "否",
         "precondition":(_get("precondition","") or "").strip(),
-        "steps_text":_steps_to_text(_get("steps"),""),
+        "steps_text":_steps_to_text(_get("steps")),
         "expected_result":(_get("expected_result","") or "").strip(),
         "review_status":REVIEW_LABEL.get(review_status,review_status),
         "source":SOURCE_LABEL.get(source,source),
@@ -139,7 +140,7 @@ def _group_rows(rows:list[dict])->tuple[list[str],dict[str,list[str]],dict[str,d
 
 def _split_text_lines(text:str) -> list[str]:
     """把多行文本拆成非空行；单行文本也返回长度为 1 的列表。"""
-    return [line.strip() for line in (text or "").splitlines if line.strip()]
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
 
 def _strip_step_number(step:str)->str:
     """去掉 '1. xxx' 之类的编号前缀，便于用 Markdown 列表重新展示。"""
@@ -159,12 +160,12 @@ def export_testcases_md(title:str,rows:list[dict],include_review:bool=False)->st
     include_review 参数保留以兼容旧调用，但不再输出评审 / 来源备注（用户显式要求去掉）。
     """
     module_order,feature_order,grouped = _group_rows(rows)
-    lines = [f"- {title or "测试用例"}"]
+    lines = [f"- {title or '测试用例'}"]
 
     for mod in module_order:
-        lines.append(f" - 模块:{mod}")
+        lines.append(f"  - 模块:{mod}")
         for feat in feature_order[mod]:
-            lines.append("f     - 功能点:{feat}")
+            lines.append(f"    - 功能点:{feat}")
             for row in grouped[mod][feat]:
                 tags:list[str] =[]
                 if row.get("is_smoke") == "是":
@@ -177,12 +178,12 @@ def export_testcases_md(title:str,rows:list[dict],include_review:bool=False)->st
                     tags.append(priority)
                 tag_str = "".join(f"【{t}】" for t in tags)
                 title_text = (row.get("title","") or "").strip() or "(未命名用例)"
-                lines.append(f"         - {tag_str}{title_text}")
+                lines.append(f"      - {tag_str}{title_text}")
 
-                precondtion_lines = _split_text_lines(row.get("precondtion",""))
-                if precondtion_lines:
+                precondition_lines = _split_text_lines(row.get("precondition",""))
+                if precondition_lines:
                     lines.append("        - 前置条件:")
-                    for item in precondtion_lines:
+                    for item in precondition_lines:
                         lines.append(f"          - {item}")
                 
                 steps = _split_text_lines(row.get("steps_text",""))
@@ -205,7 +206,8 @@ def export_testcases_xlsx(title:str,rows:list[dict],include_review:bool) -> byte
 
     wb = Workbook()
     ws =wb.active
-    ws.title=(title or "TestCases")[:31] or "TeatCases"
+    sheet_title = re.sub(r"[\\/*?:\[\]]", "_", title or "TestCases")
+    ws.title=sheet_title[:31] or "TestCases"
 
     # 设置表头、设置列宽、冻结表头
     header_fill = PatternFill("solid",fgColor="4F46E5")
@@ -223,9 +225,9 @@ def export_testcases_xlsx(title:str,rows:list[dict],include_review:bool) -> byte
             cell = ws.cell(row=r,column=c,value=row.get(field,"") or "")
             cell.alignment = Alignment(vertical="top",wrap_text=True)
 
-        buffer = BytesIO()
-        wb.save(buffer)
-        return buffer.getvalue()
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
     
 # ---------------------------统一对外调用的接口-----------------------------------------
 def export_testcases(title:str,cases:list[Any],fmt:str="xlsx",include_review:bool = False)->tuple[bytes,str,str]:
@@ -240,4 +242,3 @@ def export_testcases(title:str,cases:list[Any],fmt:str="xlsx",include_review:boo
         return text.encode("utf-8"),MEDIA_MD,"md"
     content = export_testcases_xlsx(title,rows,include_review)
     return content,MEDIA_XLSX,"xlsx"
-            

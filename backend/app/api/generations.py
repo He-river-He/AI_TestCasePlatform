@@ -302,6 +302,9 @@ def export_drafts(
     smoke_only: bool = False,
     db:Session = Depends(get_db)
 ):
+    if format not in {"md", "xlsx"}:
+        raise HTTPException(400,"导出格式只支持 md 或 xlsx")
+
     task=(
         db.query(GenerationTask)
         .options(joinedload(GenerationTask.drafts))
@@ -309,7 +312,7 @@ def export_drafts(
         .first()
     )
     if not task:
-        HTTPException(404,"生成任务不存在")
+        raise HTTPException(404,"生成任务不存在")
     drafts = list(task.drafts or [])
     if smoke_only:
         drafts= [d for d in drafts if d.is_smoke]
@@ -347,5 +350,5 @@ def export_drafts(
     content,media_type,ext=export_testcases(export_title,cases,fmt,include_review=True)
     suffix = "冒烟" if smoke_only else "用例"
     filename = f"{doc_title}-任务{task_id}-{suffix}.{ext}"
-    headers = {"Content-Disposition":f"attachment;filename*=UTF-8''{quote(filename)}"}
+    headers = {"Content-Disposition":f"attachment;filename*=UTF-8''{quote(filename,safe='')}"}
     return StreamingResponse(BytesIO(content),media_type=media_type,headers=headers)

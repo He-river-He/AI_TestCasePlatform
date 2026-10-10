@@ -393,15 +393,26 @@ export default function TestCaseLibrary({ scopeProjectId }) {
 
   const columns = [
     ...(scopeProjectId ? [] : [{ title: '项目', dataIndex: 'project_name', width: 120, ellipsis: true }]),
-    { title: '用例标题', dataIndex: 'title', ellipsis: true, className: 'key-text-cell' },
+    {
+      title: '用例标题', dataIndex: 'title', width: 340,
+      render: (value) => <Tooltip title={value}><span className="table-wrap-text table-wrap-text-strong">{value}</span></Tooltip>,
+      className: 'key-text-cell',
+    },
     {
       title: '用例集',
       dataIndex: 'is_smoke',
       width: 80,
       render: v => (v ? <Tag color="green">冒烟</Tag> : <Tag>完整</Tag>),
     },
-    { title: '模块', dataIndex: 'module', width: 110, ellipsis: true, render: v => v || '—' },
-    { title: '功能点', dataIndex: 'feature', width: 140, ellipsis: true, className: 'key-text-cell', render: v => v || '—' },
+    {
+      title: '模块', dataIndex: 'module', width: 220,
+      render: (value) => value ? <Tooltip title={value}><span className="table-wrap-text">{value}</span></Tooltip> : '—',
+    },
+    {
+      title: '功能点', dataIndex: 'feature', width: 280,
+      render: (value) => value ? <Tooltip title={value}><span className="table-wrap-text table-wrap-text-strong">{value}</span></Tooltip> : '—',
+      className: 'key-text-cell',
+    },
     { title: '类型', dataIndex: 'case_type', width: 80, render: v => <Tag>{TYPE_LABEL[v] || v}</Tag> },
     { title: '优先级', dataIndex: 'priority', width: 80, render: priorityTag },
     { title: '来源', dataIndex: 'source', width: 90, render: v => SOURCE_LABEL[v] || v },
@@ -543,9 +554,11 @@ export default function TestCaseLibrary({ scopeProjectId }) {
                   />
                 </Space>
                 <Table
+                  className="case-library-table"
                   rowKey="id"
                   dataSource={listCases}
                   columns={columns}
+                  scroll={{ x: 'max-content' }}
                   pagination={{ pageSize: 10, showSizeChanger: true }}
                   rowSelection={scopeProjectId ? { selectedRowKeys, onChange: setSelectedRowKeys } : undefined}
                   expandable={{ expandedRowRender: (r) => <CaseDetail record={r} /> }}

@@ -100,7 +100,7 @@ def delete_document(project_id:int,doc_id:int,db:Session=Depends(get_db)):
 
 # ------------------------------------------------------------------------------
 
-@router.get("/{doc_id}/chunks",response_model=KnowledgeChunkOut)
+@router.get("/{doc_id}/chunks",response_model=list[KnowledgeChunkOut])
 def list_chunks(project_id:int,doc_id:int,db:Session=Depends(get_db)):
     _get_doc(project_id,doc_id,db)
     return (

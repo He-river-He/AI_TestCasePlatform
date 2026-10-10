@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ApartmentOutlined, PauseCircleOutlined, ReloadOutlined, UnorderedListOutlined } from '@ant-design/icons';
-import { App, Button, Card, Collapse, Dropdown, Input, Modal, Progress, Radio, Segmented, Space, Table, Tag, Typography } from 'antd';
+import { App, Button, Card, Collapse, Dropdown, Input, Modal, Progress, Radio, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import TestCaseMindmap from '../../components/TestCaseMindmap';
 import {
   QUALITY_COLOR, QUALITY_LABEL, REJECT_REASONS, REVIEW_COLOR, REVIEW_LABEL, SKILL_LABEL, TYPE_LABEL,
@@ -59,7 +59,13 @@ export default function StepReview({
     }
   };
   const draftColumns = [
-    { title: '用例标题', dataIndex: 'title', ellipsis: true, className: 'key-text-cell' },
+    {
+      title: '用例标题',
+      dataIndex: 'title',
+      width: 360,
+      render: (value) => <Tooltip title={value}><span className="table-wrap-text table-wrap-text-strong">{value}</span></Tooltip>,
+      className: 'key-text-cell',
+    },
     {
       title: '用例集',
       dataIndex: 'is_smoke',
@@ -230,9 +236,11 @@ export default function StepReview({
       </div>
       {viewMode === 'list' ? (
         <Table
+          className="review-draft-table"
           rowKey="id"
           dataSource={(task.drafts || []).filter(d => draftSuiteFilter === 'all' || d.is_smoke)}
           columns={draftColumns}
+          scroll={{ x: 'max-content' }}
           rowSelection={{
             selectedRowKeys: selectedDrafts,
             onChange: setSelectedDrafts,

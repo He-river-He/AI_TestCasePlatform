@@ -8,7 +8,7 @@ from langchain_openai import OpenAIEmbeddings
 from contextlib import asynccontextmanager
 from typing import AsyncIterable
 
-EMBEDDING_BATCH_SIZE = 16
+EMBEDDING_BATCH_SIZE = 10
 MOCK_EMBEDDING_DIMENSIONS = 64
 
 def embedding_configured(config:RuntimeModelConfig) -> bool:

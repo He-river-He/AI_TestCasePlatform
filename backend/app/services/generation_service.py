@@ -10,6 +10,7 @@ from app.skills.registry import get_registry
 from app.skills.base import SkillContext
 import json
 import hashlib
+import logging
 from app.ai.vector_store_factory import VECTOR_COLLECTION_VERSION
 from app.services.knowledge_service import DEFAULT_TOP_K,RECALL_TOP_K,SIMILARITY_THRESHOLD,RRF_K
 
@@ -189,6 +190,55 @@ def _draft_for_judge(draft: GeneratedCaseDraft) -> dict:
         "expected_result": draft.expected_result,
     }
 
+
+JUDGE_BATCH_SIZE = 6
+JUDGE_MAX_ATTEMPTS = 3
+logger = logging.getLogger(__name__)
+
+
+async def _judge_group(registry, context: SkillContext, feature_data: dict,
+                       group: list[GeneratedCaseDraft]) -> dict[int, dict]:
+    """按小批次评分，并只重试模型没有返回的用例。"""
+    scored: dict[int, dict] = {}
+    for offset in range(0, len(group), JUDGE_BATCH_SIZE):
+        batch = group[offset:offset + JUDGE_BATCH_SIZE]
+        pending = list(range(len(batch)))
+        for _ in range(JUDGE_MAX_ATTEMPTS):
+            if not pending:
+                break
+            try:
+                result = await registry.run(
+                    "case_judge",
+                    {
+                        "feature_item": feature_data,
+                        "cases": [_draft_for_judge(batch[index]) for index in pending],
+                    },
+                    context,
+                )
+            except Exception:
+                continue
+
+            returned = set()
+            if not isinstance(result, dict):
+                continue
+            for judgement in result.get("judgements") or []:
+                if not isinstance(judgement, dict):
+                    continue
+                index = judgement.get("index")
+                if not isinstance(index, int) or not (0 <= index < len(pending)):
+                    continue
+                original_index = offset + pending[index]
+                scored[original_index] = judgement
+                returned.add(pending[index])
+            pending = [index for index in pending if index not in returned]
+        if pending:
+            logger.warning(
+                "AI Judge did not return scores for %d cases after %d attempts",
+                len(pending),
+                JUDGE_MAX_ATTEMPTS,
+            )
+    return scored
+
 async def run_judge_for_task(
     db:Session,
     task:GenerationTask,
@@ -227,22 +277,11 @@ async def run_judge_for_task(
         feature_data = _item_feature_data(item) if item else {"feature":"未知功能点"}
         # 仅在生成流程中更新进度/阶段；手动重评（任务已完成）不动进度
         if task.status == "generating":
-            task.stage = f"AI 评分{group_idx+1}/{group_count}:{feature_data.get("feature","")}"
+            task.stage = f"AI 评分{group_idx+1}/{group_count}:{feature_data.get('feature', '')}"
             task.progress = 85+int(10* group_idx/group_count)
             db.commit()
-        try:
-            result = await registry.run(
-                "case_judge",
-                {"feature_item":feature_data,"cases":[_draft_for_judge(d) for d in group]},
-                context,
-            )
-        except Exception:
-            continue
-
-        for judgement in result.get("judgements") or []:
-            idx = judgement.get("index")
-            if not isinstance(idx,int) or not ( 0<= idx < len(group)):
-                continue
+        judgements = await _judge_group(registry, context, feature_data, group)
+        for idx, judgement in judgements.items():
             draft = group[idx]
             draft.judge_score = judgement.get("overall")
             draft.judge_issues = json.dumps(

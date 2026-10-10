@@ -11,10 +11,11 @@ def _resolve_chat_config(
     config:RuntimeModelConfig,
     purpose:ModelPurpose,
 ) -> tuple[str,str,str]:
+    """返回 ``(api_key, base_url, model)``，供 ChatOpenAI 创建使用。"""
     if purpose == "evaluation":
         eval_config = (
-            config.eval_llm_base_url,
             config.eval_llm_api_key,
+            config.eval_llm_base_url,
             config.eval_llm_model,
         )
         if any(eval_config):

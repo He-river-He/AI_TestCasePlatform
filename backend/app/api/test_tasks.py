@@ -54,7 +54,9 @@ def _resolve_case_ids_by_selection(db: Session, project_id: int, case_ids: list[
         .filter(TestCase.project_id==project_id,TestCase.id.in_(case_ids))
         .all()
     )
-    ids = [r[0] for r in rows]
+    # ORM queries return TestCase instances, not row tuples. Indexing with
+    # r[0] raises TypeError and makes task creation fail with HTTP 500.
+    ids = [row.id for row in rows]
     if len(ids) != len(set(case_ids)):
         raise HTTPException(400,"部分用例不存在或不属于该项目")
     return ids

@@ -11,14 +11,14 @@
 
 指标口径：
 - success: 任务完成且产出用例
-- usable_rate: Judge 综合分 >= 4 的用例占比（离线近似，线上以人工采纳率为准）
+- usable_rate: 已获得 Judge 评分且综合分 >= 4 的用例占比（离线近似，线上以人工采纳率为准）
 - recall: 标准测试点被生成用例覆盖的比例（LLM 批量判定，mock 模式用关键词匹配）
 - duplicate_rate / hallucination_count: 来自质检报告
 - tokens / duration: 成本
 """
 
 import asyncio
-from datetime import time
+import time
 from app.models.evaluation import EvalSample,EvalRun,EvalResult
 import json
 from app.ai.chains import judge_checkpoint_coverage
@@ -184,7 +184,8 @@ async def _eval_one_sample(
     total = len(drafts)
     success = task.status == "completed" and total > 0
 
-    usable = sum(1 for d in drafts if (d.judge_score or 0) >= USABLE_SCORE_THRESHOLD)
+    scored = [d for d in drafts if d.judge_score is not None]
+    usable = sum(1 for d in scored if d.judge_score >= USABLE_SCORE_THRESHOLD)
     checkpoints = _parse_checkpoints(sample)
     run.stage = "召回率判定"
     db.commit()
@@ -201,7 +202,10 @@ async def _eval_one_sample(
         "error": task.error_message or "",
         "total_cases": total,
         "usable_cases": usable,
-        "usable_rate": round(usable / total * 100, 1) if total else 0.0,
+        # 未评分不等于 0 分；可用率按已评分用例计算，并单独报告评分覆盖率。
+        "judge_scored_cases": len(scored),
+        "judge_coverage_rate": round(len(scored) / total * 100, 1) if total else 0.0,
+        "usable_rate": round(usable / len(scored) * 100, 1) if scored else None,
         "recall": recall,
         "checkpoint_count": len(checkpoints),
         "uncovered_checkpoints": uncovered_checkpoints,
@@ -218,6 +222,7 @@ def _aggregate(sample_metrics: list[dict]) -> dict:
     success_count = sum(1 for m in sample_metrics if m["success"])
     total_cases = sum(m["total_cases"] for m in sample_metrics)
     usable_cases = sum(m["usable_cases"] for m in sample_metrics)
+    judged_cases = sum(m.get("judge_scored_cases", 0) for m in sample_metrics)
     duplicate_count = sum(m["duplicate_count"] for m in sample_metrics)
     recalls = [m["recall"] for m in sample_metrics if m["recall"] is not None]
     judge_scores = [m["avg_judge_score"] for m in sample_metrics if m["avg_judge_score"] is not None]
@@ -229,7 +234,9 @@ def _aggregate(sample_metrics: list[dict]) -> dict:
         "sample_count": total_samples,
         "success_rate": rate(success_count, total_samples),
         "total_cases": total_cases,
-        "usable_rate": rate(usable_cases, total_cases),
+        "judge_scored_cases": judged_cases,
+        "judge_coverage_rate": rate(judged_cases, total_cases),
+        "usable_rate": rate(usable_cases, judged_cases) if judged_cases else None,
         "recall": round(sum(recalls) / len(recalls), 1) if recalls else None,
         "duplicate_rate": rate(duplicate_count, total_cases),
         "hallucination_count": sum(m["hallucination_count"] for m in sample_metrics),

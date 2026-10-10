@@ -1,4 +1,4 @@
-import { Button, Card, Dropdown, Input, Popconfirm, Space, Table, Tag, Typography } from 'antd';
+import { Button, Card, Dropdown, Input, Popconfirm, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ItemDetail, priorityTag } from './DetailPanels';
 import FlowActionBar from './FlowActionBar';
 
@@ -24,7 +24,10 @@ export default function StepConfirmItems({
   onConfirm,
 }) {
   const itemColumns = [
-    { title: '模块', dataIndex: 'module', width: 100, ellipsis: true },
+    {
+      title: '模块', dataIndex: 'module', width: 200,
+      render: (value) => value ? <Tooltip title={value}><span className="table-wrap-text">{value}</span></Tooltip> : '—',
+    },
     {
       title: '来源',
       dataIndex: 'source_type',
@@ -35,11 +38,24 @@ export default function StepConfirmItems({
         </Tag>
       ),
     },
-    { title: '功能点', dataIndex: 'feature', width: 140, ellipsis: true, className: 'key-text-cell' },
+    {
+      title: '功能点', dataIndex: 'feature', width: 280,
+      render: (value) => <Tooltip title={value}><span className="table-wrap-text table-wrap-text-strong">{value}</span></Tooltip>,
+      className: 'key-text-cell',
+    },
     { title: '优先级', dataIndex: 'priority', width: 72, render: priorityTag },
-    { title: '描述', dataIndex: 'description', ellipsis: true, render: v => v || '—' },
-    { title: '验收标准', dataIndex: 'acceptance_criteria', ellipsis: true, render: v => v || '—' },
-    { title: '约束/边界', dataIndex: 'constraints', width: 140, ellipsis: true, render: v => v || '—' },
+    {
+      title: '描述', dataIndex: 'description', width: 260,
+      render: (value) => value ? <Tooltip title={value}><span className="table-wrap-text">{value}</span></Tooltip> : '—',
+    },
+    {
+      title: '验收标准', dataIndex: 'acceptance_criteria', width: 280,
+      render: (value) => value ? <Tooltip title={value}><span className="table-wrap-text">{value}</span></Tooltip> : '—',
+    },
+    {
+      title: '约束/边界', dataIndex: 'constraints', width: 240,
+      render: (value) => value ? <Tooltip title={value}><span className="table-wrap-text">{value}</span></Tooltip> : '—',
+    },
     {
       title: '操作',
       width: 110,
@@ -114,9 +130,11 @@ export default function StepConfirmItems({
         </div>
       </Card>
       <Table
+        className="feature-confirm-table"
         rowKey="id"
         dataSource={document.items}
         columns={itemColumns}
+        scroll={{ x: 'max-content' }}
         rowSelection={{ selectedRowKeys: selectedItems, onChange: setSelectedItems }}
         pagination={false}
         expandable={{ expandedRowRender: (r) => <ItemDetail record={r} /> }}

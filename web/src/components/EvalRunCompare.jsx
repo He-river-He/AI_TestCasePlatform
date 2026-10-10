@@ -13,6 +13,7 @@ const METRIC_ROWS = [
   { key: 'total_cases', label: '生成用例数', better: 'neutral' },
   { key: 'success_rate', label: '生成成功率', pct: true, better: 'up' },
   { key: 'usable_rate', label: '可用率（评分 ≥4）', pct: true, better: 'up' },
+  { key: 'judge_coverage_rate', label: '评分覆盖率', pct: true, better: 'up' },
   { key: 'recall', label: '场景召回率', pct: true, better: 'up' },
   { key: 'avg_judge_score', label: 'AI 均分', better: 'up' },
   { key: 'duplicate_rate', label: '重复率', pct: true, better: 'down' },

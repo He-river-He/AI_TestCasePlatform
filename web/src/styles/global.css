@@ -1862,6 +1862,7 @@ body {
   grid-template-columns: 260px 1fr;
   gap: 16px;
   align-items: start;
+  min-width: 0;
 }
 
 .library-tree-panel {
@@ -1898,6 +1899,22 @@ body {
 }
 
 .library-table-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.library-table-panel .ant-card-body {
+  min-width: 0;
+}
+
+.library-table-panel .ant-table-wrapper {
+  max-width: 100%;
+}
+
+/* 宽表格在卡片内部横向滚动，避免把整个页面撑宽后裁掉首列或操作列。 */
+.case-library-table .ant-table-container,
+.task-case-table .ant-table-container,
+.task-defect-table .ant-table-container {
   min-width: 0;
 }
 
@@ -1946,6 +1963,24 @@ body {
 .ant-table-tbody > tr > td.key-text-cell {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+.table-wrap-text {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.table-wrap-text-strong {
+  font-weight: 600;
+}
+
+.feature-confirm-table .ant-table-cell,
+.case-library-table .ant-table-cell,
+.review-draft-table .ant-table-cell {
+  vertical-align: top;
 }
 
 /* Modal */

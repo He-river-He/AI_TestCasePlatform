@@ -282,9 +282,9 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
   );
 
   const columns = [
-    { title: '用例标题', dataIndex: 'title', ellipsis: true, className: 'key-text-cell' },
-    { title: '功能点', dataIndex: 'feature', width: 120, ellipsis: true, render: (v) => v || '—' },
-    { title: '优先级', dataIndex: 'priority', width: 64, render: priorityTag },
+    { title: '用例标题', dataIndex: 'title', width: 240, ellipsis: true, className: 'key-text-cell' },
+    { title: '功能点', dataIndex: 'feature', width: 160, ellipsis: true, render: (v) => v || '—' },
+    { title: '优先级', dataIndex: 'priority', width: 80, render: priorityTag },
     {
       title: '结果',
       dataIndex: 'result',
@@ -421,9 +421,11 @@ function BatchPanel({ pid, taskId, batch, onBatchChange, onDeleteBatch, deletabl
                 />
               </Space>
               <Table
+                className="task-case-table"
                 rowKey="id"
                 dataSource={filteredCases}
                 columns={columns}
+                scroll={{ x: 'max-content' }}
                 pagination={{ pageSize: 20, showSizeChanger: true }}
                 rowSelection={{
                   selectedRowKeys,
@@ -561,10 +563,12 @@ function DefectsPanel({ pid, taskId, onJumpToBatch }) {
         </Empty>
       ) : (
         <Table
+          className="task-defect-table"
           rowKey="batch_case_id"
           loading={loading}
           dataSource={defects}
           columns={columns}
+          scroll={{ x: 'max-content' }}
           pagination={{ pageSize: 20, showSizeChanger: true }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无失败用例，继续保持" /> }}
         />

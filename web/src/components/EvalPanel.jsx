@@ -219,7 +219,13 @@ export default function EvalPanel() {
   const shownDrafts = caseFilter === 'problem' ? problemDrafts : (caseTask?.drafts || []);
 
   const caseColumns = [
-    { title: '用例标题', dataIndex: 'title', ellipsis: true, className: 'key-text-cell' },
+    {
+      title: '用例标题',
+      dataIndex: 'title',
+      width: 560,
+      render: (value) => <Tooltip title={value}><span className="table-wrap-text table-wrap-text-strong">{value}</span></Tooltip>,
+      className: 'key-text-cell',
+    },
     { title: '类型', dataIndex: 'case_type', width: 80, render: v => <Tag>{TYPE_LABEL[v] || v}</Tag> },
     { title: '优先级', dataIndex: 'priority', width: 80, render: priorityTag },
     { title: '质量', dataIndex: 'quality_status', width: 90, render: v => <Tag color={QUALITY_COLOR[v]}>{QUALITY_LABEL[v] || v}</Tag> },
@@ -293,6 +299,16 @@ export default function EvalPanel() {
       ),
     },
     {
+      title: '评分覆盖率',
+      dataIndex: ['metrics', 'judge_coverage_rate'],
+      width: 105,
+      render: v => (
+        <Tooltip title="已获得 AI Judge 单条评分的用例占全部生成用例的比例">
+          <span style={{ color: metricColor(v), fontWeight: 600 }}>{pct(v)}</span>
+        </Tooltip>
+      ),
+    },
+    {
       title: '召回率',
       dataIndex: ['metrics', 'recall'],
       width: 90,
@@ -351,6 +367,7 @@ export default function EvalPanel() {
       },
     },
     { title: '用例数', dataIndex: ['metrics', 'total_cases'], width: 80, render: v => v ?? '—' },
+    { title: '评分覆盖率', dataIndex: ['metrics', 'judge_coverage_rate'], width: 105, render: pct },
     { title: '可用率', dataIndex: ['metrics', 'usable_rate'], width: 90, render: pct },
     { title: '召回率', dataIndex: ['metrics', 'recall'], width: 90, render: pct },
     { title: '重复', dataIndex: ['metrics', 'duplicate_count'], width: 70, render: v => v ?? '—' },
@@ -515,6 +532,7 @@ export default function EvalPanel() {
             {detailRun.metrics?.sample_count != null && (
               <div className="quality-stats" style={{ marginBottom: 16 }}>
                 <div className="quality-stat"><div className="quality-stat-value">{detailRun.metrics.total_cases}</div><div className="quality-stat-label">生成用例</div></div>
+                <div className="quality-stat"><div className="quality-stat-value" style={{ color: metricColor(detailRun.metrics.judge_coverage_rate) }}>{pct(detailRun.metrics.judge_coverage_rate)}</div><div className="quality-stat-label">评分覆盖率</div></div>
                 <div className="quality-stat"><div className="quality-stat-value" style={{ color: metricColor(detailRun.metrics.usable_rate) }}>{pct(detailRun.metrics.usable_rate)}</div><div className="quality-stat-label">可用率</div></div>
                 <div className="quality-stat"><div className="quality-stat-value" style={{ color: metricColor(detailRun.metrics.recall) }}>{pct(detailRun.metrics.recall)}</div><div className="quality-stat-label">召回率</div></div>
                 <div className="quality-stat"><div className="quality-stat-value">{pct(detailRun.metrics.duplicate_rate)}</div><div className="quality-stat-label">重复率</div></div>
@@ -536,7 +554,7 @@ export default function EvalPanel() {
         title={caseResult ? `用例明细 · ${caseResult.sample_title}` : ''}
         open={!!caseResult}
         onClose={() => setCaseResult(null)}
-        width={780}
+        width="min(1120px, 92vw)"
       >
         {caseLoading ? (
           <div style={{ textAlign: 'center', padding: 60 }}><Spin /></div>
@@ -574,11 +592,13 @@ export default function EvalPanel() {
               <Alert type="success" showIcon message="本样本没有问题用例，全部通过质检且 AI 评分不低于 4 分" />
             ) : (
               <Table
+                className="eval-case-detail-table"
                 key={caseFilter}
                 rowKey="id"
                 size="small"
                 dataSource={shownDrafts}
                 columns={caseColumns}
+                scroll={{ x: 'max-content' }}
                 pagination={shownDrafts.length > 20 ? { pageSize: 20 } : false}
                 expandable={{
                   expandedRowRender: (r) => <CaseDetail record={r} />,

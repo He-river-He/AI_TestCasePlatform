@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  App, AutoComplete, Button, Drawer, Dropdown, Empty, Form, Input, Modal, Space, Spin, Table, Tag, Tooltip, Typography,
+  Alert, App, AutoComplete, Button, Drawer, Dropdown, Empty, Form, Input, Modal, Space, Spin, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import {
   QUALITY_COLOR, QUALITY_LABEL, REVIEW_COLOR, REVIEW_LABEL, SKILL_LABEL, STATUS_LABEL, STRATEGY_LABEL, TYPE_LABEL,
 } from '../pages/generate/constants';
 import { CaseDetail, judgeScoreCell, priorityTag } from '../pages/generate/DetailPanels';
-import { createTestTask, exportGenerationDrafts, getGeneration, getGenerationSummaries } from '../services/api';
+import { createTestTask, exportGenerationDrafts, getGeneration, getGenerationSummaries, rejudgeGeneration } from '../services/api';
 import { BATCH_PRESETS } from '../utils/runResult';
 
 const { Text } = Typography;
@@ -26,7 +26,13 @@ function adoptionCell(stats) {
 }
 
 const draftColumns = [
-  { title: '用例标题', dataIndex: 'title', ellipsis: true, className: 'key-text-cell' },
+  {
+    title: '用例标题',
+    dataIndex: 'title',
+    width: 320,
+    render: (value) => <Tooltip title={value}><span className="table-wrap-text table-wrap-text-strong">{value}</span></Tooltip>,
+    className: 'key-text-cell',
+  },
   {
     title: '用例集',
     dataIndex: 'is_smoke',
@@ -60,6 +66,7 @@ export default function GenerationHistory({ projectId }) {
   const [activeSummary, setActiveSummary] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [rejudging, setRejudging] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [runTarget, setRunTarget] = useState(null);
   const [runCreating, setRunCreating] = useState(false);
@@ -98,6 +105,31 @@ export default function GenerationHistory({ projectId }) {
   const closeDetail = () => {
     setActiveSummary(null);
     setDetail(null);
+  };
+
+  const handleRejudge = async () => {
+    if (!activeSummary?.id || !detail?.drafts?.length) return;
+    setRejudging(true);
+    try {
+      const updated = await rejudgeGeneration(projectId, activeSummary.id);
+      setDetail(updated);
+      setSummaries((prev) => prev.map((item) => (
+        item.id === updated.id
+          ? { ...item, quality_report: updated.quality_report }
+          : item
+      )));
+      const total = updated.drafts?.length || 0;
+      const scored = (updated.drafts || []).filter((draft) => draft.judge_score != null).length;
+      if (scored < total) {
+        message.warning(`单条评分暂未补齐：${scored}/${total} 条。请检查 AI 评测模型配置、余额和服务日志后重试。`);
+      } else {
+        message.success(`AI 评分已完成：${scored}/${total} 条用例均已评分`);
+      }
+    } catch (err) {
+      message.error(err?.response?.data?.detail || 'AI 评分失败，请检查评测模型配置');
+    } finally {
+      setRejudging(false);
+    }
   };
 
   const handleExport = async (format) => {
@@ -197,6 +229,9 @@ export default function GenerationHistory({ projectId }) {
   ];
 
   const pendingCount = detail?.review_stats?.pending || 0;
+  const draftTotal = detail?.drafts?.length || 0;
+  const judgedDraftCount = (detail?.drafts || []).filter((draft) => draft.judge_score != null).length;
+  const unjudgedDraftCount = draftTotal - judgedDraftCount;
 
   const filteredSummaries = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -239,7 +274,7 @@ export default function GenerationHistory({ projectId }) {
         title={activeSummary ? `生成记录 #${activeSummary.id} · ${activeSummary.document_title || '未知文档'}` : ''}
         open={!!activeSummary}
         onClose={closeDetail}
-        width={880}
+        width="min(1120px, 92vw)"
         extra={
           <Space>
             {pendingCount > 0 && (
@@ -253,6 +288,11 @@ export default function GenerationHistory({ projectId }) {
                   创建测试任务
                 </Button>
               </Tooltip>
+            )}
+            {detail?.drafts?.length > 0 && (
+              <Button loading={rejudging} onClick={handleRejudge}>
+                重新评分
+              </Button>
             )}
             <Dropdown
               menu={{
@@ -286,6 +326,7 @@ export default function GenerationHistory({ projectId }) {
                 <div className="quality-stat"><div className="quality-stat-value" style={{ color: '#dc2626' }}>{detail.review_stats?.rejected ?? 0}</div><div className="quality-stat-label">已驳回</div></div>
                 <div className="quality-stat"><div className="quality-stat-value" style={{ color: '#ea580c' }}>{detail.review_stats?.pending ?? 0}</div><div className="quality-stat-label">未处理</div></div>
                 <div className="quality-stat"><div className="quality-stat-value" style={{ color: '#5798F5' }}>{detail.quality_report.coverage_rate}%</div><div className="quality-stat-label">覆盖率</div></div>
+                <div className="quality-stat"><div className="quality-stat-value" style={{ color: unjudgedDraftCount ? '#ea580c' : '#16a34a' }}>{judgedDraftCount}/{draftTotal}</div><div className="quality-stat-label">单条评分</div></div>
                 {detail.quality_report.avg_judge_score != null && (
                   <div className="quality-stat"><div className="quality-stat-value" style={{ color: '#22A3A6' }}>{detail.quality_report.avg_judge_score}</div><div className="quality-stat-label">AI 均分</div></div>
                 )}
@@ -293,6 +334,16 @@ export default function GenerationHistory({ projectId }) {
                   <div className="quality-stat"><div className="quality-stat-value">{detail.tokens_used >= 1000 ? `${(detail.tokens_used / 1000).toFixed(1)}k` : detail.tokens_used}</div><div className="quality-stat-label">Token</div></div>
                 )}
               </div>
+            )}
+
+            {unjudgedDraftCount > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={`${unjudgedDraftCount} 条用例缺少 AI 评分`}
+                description="总分只统计已经评分的用例。点击右上角“重新评分”补齐；如果仍未补齐，请检查 AI 评测模型配置、账户余额及后端日志。"
+              />
             )}
 
             {detail.quality_report?.suggestions && (
